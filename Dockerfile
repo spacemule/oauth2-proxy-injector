@@ -15,8 +15,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 
 FROM alpine:latest
 
-RUN adduser -D -u 65534 webhook
-USER webhook
+USER nobody
 
 COPY --from=builder /app/oauth2-proxy-webhook /oauth2-proxy-webhook
 
