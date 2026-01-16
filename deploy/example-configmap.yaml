@@ -1,0 +1,115 @@
+# Example oauth2-proxy ConfigMap
+# This ConfigMap contains the oauth2-proxy settings that will be applied
+# to pods with the annotation: spacemule.net/oauth2-proxy.config: "example-oauth2-config"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: example-oauth2-config
+  namespace: default  # Put this in the same namespace as your pods
+  labels:
+    app.kubernetes.io/component: oauth2-proxy-config
+data:
+  # OAuth2 provider type
+  # Options: oidc, google, github, azure, keycloak, etc.
+  provider: "oidc"
+
+  # OIDC issuer URL (required for provider=oidc)
+  oidc-issuer-url: "https://auth.example.com/realms/myrealm"
+
+  # OAuth2 client ID
+  client-id: "my-application"
+
+  # Reference to Secret containing client secret
+  # Format: "secret-name" or "secret-name:key"
+  # Create secret with:
+  # kubectl create secret generic oauth2-secrets \
+  #   --from-literal=client-secret=your-client-secret \
+  #   --from-literal=cookie-secret=$(openssl rand -base64 32 | head -c 32)
+  client-secret-ref: "oauth2-secrets:client-secret"
+
+  # Reference to Secret containing cookie encryption secret
+  # Must be 16, 24, or 32 bytes for AES encryption
+  cookie-secret-ref: "oauth2-secrets:cookie-secret"
+
+  # Cookie domains (comma-separated, optional)
+  # Leave empty for automatic detection
+  # cookie-domains: ".example.com"
+
+  # Require HTTPS for cookies (should be true in production!)
+  cookie-secure: "true"
+
+  # Allowed email domains (comma-separated)
+  # Use "*" to allow all domains
+  email-domains: "example.com,corp.example.com"
+
+  # Allowed groups (comma-separated, optional)
+  # Only users in these groups can access
+  # Works with providers that support group claims
+  # allowed-groups: "developers,admins"
+
+  # Skip the "Sign in with X" button page
+  # Set to true to redirect directly to the provider
+  skip-provider-button: "true"
+
+  # Use PKCE flow (allows skipping client-secret-ref)
+  # pkce-enabled: "true"
+
+  # oauth2-proxy container image
+  proxy-image: "quay.io/oauth2-proxy/oauth2-proxy:v7.5.1"
+
+  # Extra arguments (newline-separated)
+  extra-args: |
+    --pass-access-token=true
+    --set-xauthrequest=true
+    --pass-user-headers=true
+
+---
+# Example Secret for oauth2-proxy credentials
+# Create with actual secrets - don't commit real values!
+# kubectl create secret generic oauth2-secrets \
+#   --from-literal=client-secret=your-actual-client-secret \
+#   --from-literal=cookie-secret=$(openssl rand -base64 32 | head -c 32)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: oauth2-secrets
+  namespace: default  # Same namespace as your ConfigMap and pods
+type: Opaque
+stringData:
+  client-secret: "REPLACE_WITH_REAL_CLIENT_SECRET"
+  # Generate with: openssl rand -base64 32 | head -c 32
+  cookie-secret: "REPLACE_WITH_32_BYTE_RANDOM_STRING"
+
+---
+# Example Pod using the oauth2-proxy injection
+# This demonstrates how to annotate a pod for sidecar injection
+apiVersion: v1
+kind: Pod
+metadata:
+  name: example-protected-app
+  namespace: default
+  annotations:
+    # Enable oauth2-proxy injection
+    spacemule.net/oauth2-proxy.enabled: "true"
+    # Reference the ConfigMap above
+    spacemule.net/oauth2-proxy.config: "example-oauth2-config"
+    # Protect the port named "http" (default, can omit)
+    spacemule.net/oauth2-proxy.protected-port: "http"
+    # Paths to skip authentication (comma-separated)
+    spacemule.net/oauth2-proxy.ignore-paths: "/health,/metrics"
+    # Paths requiring JWT only, no login redirect (comma-separated)
+    spacemule.net/oauth2-proxy.api-paths: "/api/"
+    # Skip login page when JWT bearer token is provided
+    spacemule.net/oauth2-proxy.skip-jwt-bearer-tokens: "false"
+    # Upstream TLS mode: "http" (default), "https", or "https-insecure"
+    spacemule.net/oauth2-proxy.upstream-tls: "http"
+spec:
+  containers:
+    - name: app
+      image: nginx:latest
+      ports:
+        - containerPort: 8080
+          name: http  # This named port will be protected
+        - containerPort: 9090
+          name: metrics

@@ -1,0 +1,21 @@
+# oauth2-proxy-injector Webhook Service
+# This service is referenced by the MutatingWebhookConfiguration
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: oauth2-proxy-webhook
+  namespace: oauth2-proxy-system
+  labels:
+    app: oauth2-proxy-webhook
+spec:
+  # TODO: The service name + namespace forms the webhook URL:
+  # https://oauth2-proxy-webhook.oauth2-proxy-system.svc:443/mutate
+  ports:
+    - name: https
+      port: 443
+      targetPort: 8443  # Matches container port
+      protocol: TCP
+  selector:
+    app: oauth2-proxy-webhook
+  type: ClusterIP

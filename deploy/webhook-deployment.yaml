@@ -1,0 +1,125 @@
+# oauth2-proxy-injector Webhook Deployment
+# Uses cert-manager for automatic TLS certificate management
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oauth2-proxy-webhook
+  namespace: oauth2-proxy-system
+  labels:
+    app: oauth2-proxy-webhook
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: oauth2-proxy-webhook
+  template:
+    metadata:
+      labels:
+        app: oauth2-proxy-webhook
+    spec:
+      serviceAccountName: oauth2-proxy-webhook
+      containers:
+        - name: webhook
+          # Replace with your actual image registry and tag
+          image: your-registry/oauth2-proxy-webhook:latest
+          imagePullPolicy: Always
+          args:
+            - --port=8443
+            - --cert-file=/certs/tls.crt
+            - --key-file=/certs/tls.key
+            # Empty = look in same namespace as pod being mutated
+            # Set to specific namespace for centralized config
+            # - --config-namespace=oauth2-proxy-system
+          ports:
+            - name: https
+              containerPort: 8443
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: https
+              scheme: HTTPS
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: https
+              scheme: HTTPS
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          volumeMounts:
+            - name: tls-certs
+              mountPath: /certs
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65534  # nobody
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: tls-certs
+          secret:
+            # This secret is created by cert-manager from the Certificate resource
+            secretName: oauth2-proxy-webhook-tls
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: oauth2-proxy-webhook
+                topologyKey: kubernetes.io/hostname
+---
+# Certificate resource for cert-manager
+# This automatically creates the oauth2-proxy-webhook-tls Secret
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: oauth2-proxy-webhook
+  namespace: oauth2-proxy-system
+spec:
+  secretName: oauth2-proxy-webhook-tls
+  duration: 8760h  # 1 year
+  renewBefore: 720h  # 30 days
+  subject:
+    organizations:
+      - oauth2-proxy-webhook
+  isCA: false
+  privateKey:
+    algorithm: RSA
+    size: 2048
+  usages:
+    - server auth
+  dnsNames:
+    - oauth2-proxy-webhook
+    - oauth2-proxy-webhook.oauth2-proxy-system
+    - oauth2-proxy-webhook.oauth2-proxy-system.svc
+    - oauth2-proxy-webhook.oauth2-proxy-system.svc.cluster.local
+  issuerRef:
+    # Change this to match your cert-manager issuer
+    # For self-signed: use a SelfSigned or CA issuer
+    name: selfsigned-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io
+---
+# Optional: Self-signed ClusterIssuer for development/testing
+# For production, use a proper CA issuer
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned-issuer
+spec:
+  selfSigned: {}

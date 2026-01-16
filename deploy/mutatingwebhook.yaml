@@ -1,0 +1,53 @@
+# MutatingWebhookConfiguration for oauth2-proxy sidecar injection
+# Uses cert-manager for automatic CA bundle injection
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: oauth2-proxy-injector
+  labels:
+    app: oauth2-proxy-webhook
+  annotations:
+    # cert-manager will automatically inject the CA bundle from the Certificate's secret
+    cert-manager.io/inject-ca-from: oauth2-proxy-system/oauth2-proxy-webhook
+webhooks:
+  - name: oauth2-proxy.spacemule.net
+    clientConfig:
+      service:
+        name: oauth2-proxy-webhook
+        namespace: oauth2-proxy-system
+        path: /mutate
+        port: 443
+      # caBundle is automatically injected by cert-manager via the annotation above
+      caBundle: ""
+    rules:
+      # Only intercept Pod CREATE operations
+      - operations: ["CREATE"]
+        apiGroups: [""]
+        apiVersions: ["v1"]
+        resources: ["pods"]
+        scope: Namespaced
+    # Only inject in namespaces with the label oauth2-proxy-injection=enabled
+    namespaceSelector:
+      matchExpressions:
+        - key: oauth2-proxy-injection
+          operator: In
+          values: ["enabled"]
+        # Never inject into system namespaces
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values:
+            - kube-system
+            - kube-public
+            - kube-node-lease
+            - oauth2-proxy-system
+    # Fail closed - if webhook unreachable, pod creation fails
+    failurePolicy: Fail
+    # Re-invoke if other webhooks modify the pod
+    reinvocationPolicy: IfNeeded
+    # No external side effects
+    sideEffects: None
+    # Admission review version
+    admissionReviewVersions: ["v1"]
+    # Timeout for webhook calls
+    timeoutSeconds: 10

@@ -1,0 +1,25 @@
+# oauth2-proxy-injector multi-stage build
+FROM golang:1.25-alpine AS builder
+
+WORKDIR /app
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -ldflags "-s -w" \
+    -o oauth2-proxy-webhook \
+    ./cmd/webhook
+
+FROM alpine:latest
+
+RUN adduser -D -u 65534 webhook
+USER webhook
+
+COPY --from=builder /app/oauth2-proxy-webhook /oauth2-proxy-webhook
+
+EXPOSE 8443
+
+ENTRYPOINT ["/oauth2-proxy-webhook"]

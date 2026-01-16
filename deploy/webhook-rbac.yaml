@@ -1,0 +1,38 @@
+# oauth2-proxy-injector RBAC Configuration
+# TODO: The webhook needs permissions to read ConfigMaps for proxy configuration
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: oauth2-proxy-webhook
+  namespace: oauth2-proxy-system
+---
+# ClusterRole for reading ConfigMaps cluster-wide
+# TODO: If you want namespace-scoped config only, use Role instead
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: oauth2-proxy-webhook
+rules:
+  # Read ConfigMaps containing oauth2-proxy configuration
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]
+  # TODO: Optionally validate that referenced Secrets exist
+  # Uncomment if you implement secret validation
+  # - apiGroups: [""]
+  #   resources: ["secrets"]
+  #   verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: oauth2-proxy-webhook
+subjects:
+  - kind: ServiceAccount
+    name: oauth2-proxy-webhook
+    namespace: oauth2-proxy-system
+roleRef:
+  kind: ClusterRole
+  name: oauth2-proxy-webhook
+  apiGroup: rbac.authorization.k8s.io
