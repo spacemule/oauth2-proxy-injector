@@ -29,19 +29,6 @@ type cmdConfig struct {
     configNamespace string
 }
 
-// main is the entrypoint for the oauth2-proxy mutating admission webhook
-// 5. Initialize the PodMutator with the ConfigLoader
-// 6. Initialize the AdmissionHandler with the PodMutator
-// 7. Set up HTTP routes:
-//    - POST /mutate -> handler.HandleAdmission
-//    - GET /healthz -> simple 200 OK for liveness probe
-//    - GET /readyz -> readiness check (can reach API server?)
-// 8. Configure TLS using provided cert/key files
-// 9. Start HTTPS server
-// 10. Set up graceful shutdown on SIGTERM/SIGINT:
-//     - Stop accepting new connections
-//     - Wait for in-flight requests to complete
-//     - Exit cleanly
 func main() {
 	klog.InitFlags(nil)
 	cfg := parseFlags()
