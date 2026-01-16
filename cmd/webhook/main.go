@@ -1,0 +1,154 @@
+package main
+
+import (
+	"context"
+	"crypto/tls"
+	"flag"
+	"fmt"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	"k8s.io/klog/v2"
+
+	"github.com/spacemule/oauth2-proxy-injector/internal/admission"
+	"github.com/spacemule/oauth2-proxy-injector/internal/annotation"
+	"github.com/spacemule/oauth2-proxy-injector/internal/config"
+	"github.com/spacemule/oauth2-proxy-injector/internal/mutation"
+)
+
+
+type cmdConfig struct {
+    port            int
+    certFile        string
+    keyFile         string
+    configNamespace string
+}
+
+// main is the entrypoint for the oauth2-proxy mutating admission webhook
+// 5. Initialize the PodMutator with the ConfigLoader
+// 6. Initialize the AdmissionHandler with the PodMutator
+// 7. Set up HTTP routes:
+//    - POST /mutate -> handler.HandleAdmission
+//    - GET /healthz -> simple 200 OK for liveness probe
+//    - GET /readyz -> readiness check (can reach API server?)
+// 8. Configure TLS using provided cert/key files
+// 9. Start HTTPS server
+// 10. Set up graceful shutdown on SIGTERM/SIGINT:
+//     - Stop accepting new connections
+//     - Wait for in-flight requests to complete
+//     - Exit cleanly
+func main() {
+	klog.InitFlags(nil)
+	cfg := parseFlags()
+	client, err := createKubernetesClient()
+	if err != nil {
+		klog.Fatal("failed to create kubernetes client: ", err)
+	}
+	parser := annotation.NewParser()
+	loader := config.NewLoader(client, cfg.configNamespace)
+	builder := mutation.NewSidecarBuilder()
+	mutator := mutation.NewPodMutator(parser, loader, builder)
+	handler := admission.NewHandler(mutator)
+	server, err := setupServer(handler, client, cfg.certFile, cfg.keyFile, cfg.port)
+	if err != nil {
+		klog.Fatal("failed to create server: ", err)
+	}
+
+	go func() {
+		klog.InfoS("starting server", "port", cfg.port)
+		if err := server.ListenAndServeTLS("", ""); err != http.ErrServerClosed {
+			klog.ErrorS(err, "server error")
+			os.Exit(1)
+		}
+	}()
+	
+	gracefulShutdown(server)
+}
+
+// parseFlags parses command line flags and returns configuration
+func parseFlags() cmdConfig {
+	c := cmdConfig{}
+	flag.IntVar(&c.port, "port", 8443, "HTTPS port to listen on")
+	flag.StringVar(&c.certFile, "cert-file", "", "path to TLS certificate")
+    flag.StringVar(&c.keyFile, "key-file", "", "path to TLS private key")
+    flag.StringVar(&c.configNamespace, "config-namespace", "", "namespace for ConfigMaps")
+    
+    flag.Parse()
+    
+    if c.certFile == "" || c.keyFile == "" {
+        klog.Fatal("--cert-file and --key-file are required")
+    }
+    
+    return c
+}
+
+// createKubernetesClient creates an in-cluster Kubernetes clientset
+func createKubernetesClient() (kubernetes.Interface, error) {
+	cfg, err := rest.InClusterConfig()
+	if err != nil {
+		return nil, err
+	}
+	clientset, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	return clientset, nil
+}
+
+// setupServer creates and configures the HTTPS server
+func setupServer(handler *admission.Handler, client kubernetes.Interface, certFile, keyFile string, port int) (*http.Server, error) {
+	m := http.NewServeMux()
+	m.HandleFunc("/mutate", handler.HandleAdmission)
+	m.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	m.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		_, err := client.Discovery().ServerVersion()
+		if err != nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
+	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		return nil, err
+	}
+	
+	return &http.Server{
+		Addr: fmt.Sprintf(":%d", port),
+		Handler: m,
+		TLSConfig: &tls.Config{
+			Certificates: []tls.Certificate{cert},
+		},
+		ReadTimeout: 10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+	}, nil
+}
+
+// gracefulShutdown handles SIGTERM/SIGINT for clean shutdown
+func gracefulShutdown(server *http.Server) {
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGTERM, syscall.SIGINT)
+
+	<-quit
+
+	klog.Info("shutting down server...")
+	
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	
+	err := server.Shutdown(ctx)
+	if err != nil {
+		klog.ErrorS(err, "server error")
+	}
+
+	klog.Info("server stopped")
+}

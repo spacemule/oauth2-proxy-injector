@@ -7,8 +7,8 @@ bin/
 *.dylib
 
 # Build artifacts
-oauth2-proxy-webhook
-webhook
+/oauth2-proxy-webhook
+/webhook
 
 # Test coverage
 coverage.out
