@@ -23,10 +23,13 @@ type Mutator interface {
 }
 
 // PodMutator implements Mutator for oauth2-proxy sidecar injection
+//
+// TODO: Add config.Merger dependency for merging ConfigMap + annotation overrides
 type PodMutator struct {
 	annotationParser annotation.Parser
 	configLoader     config.Loader
 	sidecarBuilder   SidecarBuilder
+	configMerger	 config.Merger
 }
 
 // NewPodMutator creates a new PodMutator with its dependencies
@@ -34,11 +37,13 @@ func NewPodMutator(
 	parser annotation.Parser,
 	loader config.Loader,
 	builder SidecarBuilder,
+	merger config.Merger,
 ) *PodMutator {
 	return &PodMutator{
 		annotationParser: parser,
 		configLoader: loader,
 		sidecarBuilder: builder,
+		configMerger: merger,
 	}
 }
 
@@ -52,32 +57,37 @@ func (m *PodMutator) Mutate(ctx context.Context, pod *corev1.Pod) ([]PatchOperat
 	if !annotationCfg.Enabled {
 		return ret, nil
 	}
-	
+
 	if isAlreadyInjected(pod) {
 		return ret, nil
 	}
-	
+
 	proxyCfg, err := m.configLoader.Load(ctx, annotationCfg.ConfigMapName, pod.Namespace)
 	if err != nil {
 		return nil, err
 	}
 
+	effectiveCfg, err := m.configMerger.Merge(proxyCfg, annotationCfg)
+	if err != nil {
+		 return nil, err
+	}
+
 	ports := collectContainerPorts(pod)
-	mapping, err := CalculatePortMapping(ports, annotationCfg)
+	mapping, err := CalculatePortMapping(ports, effectiveCfg)
 	if err != nil {
 		return nil, err
 	}
-	
-	container, volumes := m.sidecarBuilder.Build(proxyCfg, mapping, annotationCfg)
+
+	container, volumes := m.sidecarBuilder.Build(effectiveCfg, mapping)
 
 	patchBuilder := NewPatchBuilder(hasExistingAnnotations(pod), hasExistingLabels(pod), hasExistingVolumes(pod))
 	patchBuilder.AddContainer(container)
 
-	i, j, remove := findProtectedPort(pod, annotationCfg.ProtectedPort)
+	i, j, remove := findProtectedPort(pod, effectiveCfg.ProtectedPort)
 	if remove {
 		patchBuilder.RemovePort(i, j)
 	}
-	
+
 	for _, v := range volumes {
 		patchBuilder.AddVolume(v)
 	}

@@ -2,7 +2,7 @@ package mutation
 
 import (
 	"fmt"
-
+	"strings"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
@@ -25,7 +25,7 @@ type PortMapping struct {
 // SidecarBuilder defines the interface for building oauth2-proxy sidecar containers
 type SidecarBuilder interface {
 	// Build creates an oauth2-proxy container configured for the given port and settings
-	Build(proxyCfg *config.ProxyConfig, portMapping PortMapping, annotationCfg *annotation.Config) (*corev1.Container, []corev1.Volume)
+	Build(cfg *config.EffectiveConfig, portMapping PortMapping) (*corev1.Container, []corev1.Volume)
 }
 
 // OAuth2ProxySidecarBuilder implements SidecarBuilder for oauth2-proxy
@@ -38,18 +38,17 @@ func NewSidecarBuilder() *OAuth2ProxySidecarBuilder {
 
 // Build creates an oauth2-proxy sidecar container and associated volumes
 func (b *OAuth2ProxySidecarBuilder) Build(
-	proxyCfg *config.ProxyConfig,
+	cfg *config.EffectiveConfig,
 	portMapping PortMapping,
-	annotationCfg *annotation.Config,
 ) (*corev1.Container, []corev1.Volume) {
 	container := &corev1.Container{
 		Name: "oauth2-proxy",
-		Image: proxyCfg.ProxyImage,
-		Args: buildArgs(proxyCfg, portMapping, annotationCfg),
-		Env: buildEnvVars(proxyCfg),
+		Image: cfg.ProxyImage,
+		Args: buildArgs(cfg, portMapping),
+		Env: buildEnvVars(cfg),
 		Ports: []corev1.ContainerPort{
 			corev1.ContainerPort{
-				Name: annotationCfg.ProtectedPort,
+				Name: cfg.ProtectedPort,
 				ContainerPort: 4180,
 				HostPort: portMapping.HostPort,
 				Protocol: corev1.ProtocolTCP,
@@ -59,8 +58,8 @@ func (b *OAuth2ProxySidecarBuilder) Build(
 		ReadinessProbe: buildProbe(4180, "/ready"),
 	}
 
-	if proxyCfg.ProxyResources != nil {
-		container.Resources = *proxyCfg.ProxyResources
+	if cfg.ProxyResources != nil {
+		container.Resources = *cfg.ProxyResources
 	}
 	
 	volumes := []corev1.Volume{}
@@ -68,15 +67,17 @@ func (b *OAuth2ProxySidecarBuilder) Build(
 	return container, volumes
 }
 
-func buildArgs(proxyCfg *config.ProxyConfig, portMapping PortMapping, annotationCfg *annotation.Config) []string {
+// buildArgs constructs the command-line arguments for oauth2-proxy
+func buildArgs(cfg *config.EffectiveConfig, portMapping PortMapping) []string {
 	var ret []string
 	
-	ret = append(ret, "--provider=" + proxyCfg.Provider)
-	ret = append(ret, "--oidc-issuer-url=" + proxyCfg.OIDCIssuerURL)
-	ret = append(ret, "--client-id=" + proxyCfg.ClientID)
+	ret = append(ret, "--provider=" + cfg.Provider)
+	ret = append(ret, "--oidc-issuer-url=" + cfg.OIDCIssuerURL)
+	ret = append(ret, "--client-id=" + cfg.ClientID)
 	ret = append(ret, "--http-address=0.0.0.0:4180" )
+	ret = append(ret, fmt.Sprintf("--cookie-secure=%t", cfg.CookieSecure))
 	
-	switch annotationCfg.UpstreamTLS {
+	switch cfg.UpstreamTLS {
 	case annotation.UpstreamNoTLS:
 		ret = append(ret, fmt.Sprintf("--upstream=http://127.0.0.1:%d", portMapping.ProxyPort))
 	case annotation.UpstreamTLSSecure:
@@ -86,30 +87,66 @@ func buildArgs(proxyCfg *config.ProxyConfig, portMapping PortMapping, annotation
 		ret = append(ret, "--ssl-upstream-insecure-skip-verify")
 	}
 	
-	if proxyCfg.SkipProviderButton {
+	if cfg.SkipProviderButton {
 		ret = append(ret, "--skip-provider-button")
 	}
-	if proxyCfg.PKCEEnabled {
+	if cfg.PKCEEnabled {
 		ret = append(ret, "--code-challenge-method=S256")
 		ret = append(ret, "--client-secret-file=/dev/null")
 	}
-	if annotationCfg.SkipJWTBearerTokens {
+	if cfg.SkipJWTBearerTokens {
 		ret = append(ret, "--skip-jwt-bearer-tokens")
 	}
+	if cfg.PassAccessToken {
+		ret = append(ret, "--pass-access-token")
+	}
+	if cfg.SetXAuthRequest {
+		ret = append(ret, "--set-xauthrequest")
+	}
+	if cfg.PassAuthorizationHeader {
+		ret = append(ret, "--pass-authorization-header")
+	}
 
-	for _, d := range proxyCfg.EmailDomains {
+	
+	if cfg.Scope != "" {
+		ret = append(ret, fmt.Sprintf("--scope=\"%s\"", cfg.Scope))
+	}
+	if cfg.OIDCGroupsClaim != "" {
+		ret = append(ret, "--oidc-groups-claim=" + cfg.OIDCGroupsClaim)
+	}
+	if cfg.RedirectURL != "" {
+		ret = append(ret, "--redirect-url=" + cfg.RedirectURL)
+	}
+	if cfg.CookieName != "" {
+		ret = append(ret, "--cookie-name=" + cfg.CookieName)
+	}
+
+	if len(cfg.ExtraJWTIssuers) > 0 {
+		ret = append(ret, "--extra-jwt-issuers=" + strings.Join(cfg.ExtraJWTIssuers, ","))
+	}
+
+	for _, d := range cfg.EmailDomains {
 		ret = append(ret, "--email-domain=" + d)
 	}
-	for _, g := range proxyCfg.AllowedGroups {
+	for _, g := range cfg.AllowedGroups {
 		ret = append(ret, "--allowed-group=" + g)
 	}
-	for _, p := range annotationCfg.IgnorePaths {
+	for _, p := range cfg.IgnorePaths {
 		ret = append(ret, "--skip-auth-route=" + p)
 	}
-	for _, p := range annotationCfg.APIPaths {
+	for _, p := range cfg.APIPaths {
 		ret = append(ret, "--api-route=" + p)
 	}
-	for _, arg := range proxyCfg.ExtraArgs {
+	// for _, d := range cfg.AllowedEmails {
+	// 	ret = append(ret, "--email-domain=" + d)
+	// }
+	for _, p := range cfg.CookieDomains {
+		ret = append(ret, "--cookie-domain=" + p)
+	}
+	for _, p := range cfg.WhitelistDomains {
+		ret = append(ret, "--whitelist-domain=" + p)
+	}
+	for _, arg := range cfg.ExtraArgs {
 		ret = append(ret, arg)
 	}
 
@@ -117,29 +154,29 @@ func buildArgs(proxyCfg *config.ProxyConfig, portMapping PortMapping, annotation
 }
 
 // buildEnvVars creates environment variable definitions for secrets
-func buildEnvVars(proxyCfg *config.ProxyConfig) []corev1.EnvVar {
+func buildEnvVars(cfg *config.EffectiveConfig) []corev1.EnvVar {
 	ret := []corev1.EnvVar{
 		corev1.EnvVar{
 			Name: "OAUTH2_PROXY_COOKIE_SECRET",
 			ValueFrom: &corev1.EnvVarSource{
 				SecretKeyRef: &corev1.SecretKeySelector{
 					LocalObjectReference: corev1.LocalObjectReference{
-						Name: proxyCfg.CookieSecretRef.Name,
+						Name: cfg.CookieSecretRef.Name,
 					},
-					Key: proxyCfg.CookieSecretRef.Key,
+					Key: cfg.CookieSecretRef.Key,
 				},
 			},
 		},
 	}
-	if proxyCfg.ClientSecretRef != nil {
+	if cfg.ClientSecretRef != nil {
 		ret = append(ret, corev1.EnvVar{
 			Name: "OAUTH2_PROXY_CLIENT_SECRET",
 			ValueFrom: &corev1.EnvVarSource{
 				SecretKeyRef: &corev1.SecretKeySelector{
 					LocalObjectReference: corev1.LocalObjectReference{
-						Name: proxyCfg.ClientSecretRef.Name,
+						Name: cfg.ClientSecretRef.Name,
 					},
-					Key: proxyCfg.ClientSecretRef.Key,
+					Key: cfg.ClientSecretRef.Key,
 				},
 			},
 		})
@@ -163,19 +200,19 @@ func buildProbe(port int32, path string) *corev1.Probe {
 	}
 }
 
-// CalculatePortMappings determines proxy->upstream port mapping
+// CalculatePortMapping determines proxy->upstream port mapping
 func CalculatePortMapping(
 	containerPorts []corev1.ContainerPort,
-	annotationCfg *annotation.Config,
+	cfg *config.EffectiveConfig,
 ) (PortMapping, error) {
 	for _, p := range containerPorts {
-		if p.Name == annotationCfg.ProtectedPort {
+		if p.Name == cfg.ProtectedPort {
 			return PortMapping{
 				ProxyPort: p.ContainerPort,
 				HostPort: p.HostPort,
-				TLSMode: annotationCfg.UpstreamTLS,
+				TLSMode: cfg.UpstreamTLS,
 			}, nil
 		}
 	}
-	return PortMapping{}, fmt.Errorf("matching port name %s not found", annotationCfg.ProtectedPort)
+	return PortMapping{}, fmt.Errorf("matching port name %s not found", cfg.ProtectedPort)
 }

@@ -6,9 +6,20 @@ import (
 )
 
 // Annotation key constants - all under the spacemule.net domain
+//
+// Annotations are organized into categories:
+// - Core: Enable/disable and ConfigMap reference
+// - Port/Routing: How traffic flows through the proxy
+// - Identity Overrides: Per-service OAuth app credentials
+// - Authorization Overrides: Per-service access control
+// - Routing Overrides: Per-service URLs and JWT settings
+// - Header Overrides: Per-service token passing
+// - Behavior Overrides: Per-service UX settings
 const (
 	// AnnotationPrefix is the base prefix for all oauth2-proxy annotations
 	AnnotationPrefix = "spacemule.net/oauth2-proxy."
+
+	// ===== Core Annotations =====
 
 	// KeyEnabled indicates whether oauth2-proxy injection is enabled for this pod
 	// Value: "true" or "false"
@@ -18,13 +29,19 @@ const (
 	// Value: ConfigMap name (e.g., "plex-config")
 	KeyConfig = AnnotationPrefix + "config"
 
+	// KeyInjected is set by the webhook after injection to prevent double-injection
+	// Value: "true" (set automatically, do not set manually)
+	KeyInjected = AnnotationPrefix + "injected"
+
+	// ===== Port/Routing Annotations (annotation-only) =====
+
 	// KeyProtectedPort specifies which container port should be protected
 	// Value: port name (e.g., "http")
-	// default "http"
+	// Default: "http"
 	KeyProtectedPort = AnnotationPrefix + "protected-port"
 
 	// KeyIgnorePaths specifies which paths should NOT be protected
-	// Value: comma-separated regex 
+	// Value: comma-separated regex
 	// Format: method=path_regex OR method!=path_regex. For all methods: path_regex OR !=path_regex
 	// Useful for metrics endpoints, swagger, health checks, etc.
 	KeyIgnorePaths = AnnotationPrefix + "ignore-paths"
@@ -42,6 +59,88 @@ const (
 	// KeyUpstreamTLS specifies how to handle TLS when connecting to the upstream pod
 	// Value: "http" (default), "https", or "https-insecure"
 	KeyUpstreamTLS = AnnotationPrefix + "upstream-tls"
+
+	// ===== Identity Overrides (override ConfigMap values) =====
+
+	// KeyClientID overrides the OAuth2 client ID from ConfigMap
+	// Use when this service has a different OAuth app registration
+	KeyClientID = AnnotationPrefix + "client-id"
+
+	// KeyClientSecretRef overrides the client secret reference from ConfigMap
+	// Format: "secret-name" or "secret-name:key"
+	KeyClientSecretRef = AnnotationPrefix + "client-secret-ref"
+
+	// KeyCookieSecretRef overrides the cookie secret reference from ConfigMap
+	// Format: "secret-name" or "secret-name:key"
+	KeyCookieSecretRef = AnnotationPrefix + "cookie-secret-ref"
+
+	// KeyScope overrides the scope from ConfigMap
+	// Format: "scope0 scope1"
+	KeyScope = AnnotationPrefix + "scope"
+
+	// KeyPKCEEnabled overrides PKCE setting from ConfigMap
+	// Value: "true" or "false"
+	KeyPKCEEnabled = AnnotationPrefix + "pkce-enabled"
+
+	// ===== Authorization Overrides (override ConfigMap values) =====
+
+	// KeyEmailDomains overrides allowed email domains from ConfigMap
+	// Value: comma-separated domains (e.g., "example.com,corp.example.com")
+	// Use "*" to allow all domains
+	KeyEmailDomains = AnnotationPrefix + "email-domains"
+
+	// KeyAllowedGroups overrides allowed groups from ConfigMap
+	// Value: comma-separated group names
+	KeyAllowedGroups = AnnotationPrefix + "allowed-groups"
+
+	// KeyAllowedEmails overrides/adds allowed email addresses
+	// Value: comma-separated email addresses
+	// More granular than email-domains for sensitive services
+	// KeyAllowedEmails = AnnotationPrefix + "allowed-emails"
+
+	// KeyWhitelistDomains overrides/adds allowed domains
+	// Value: comma-separated domains
+	KeyWhitelistDomains = AnnotationPrefix + "whitelist-domains"
+
+	// KeyName overrides the cookie name from ConfigMap
+	// Format: "cookie-name
+	KeyCookieName = AnnotationPrefix + "cookie-name"
+
+	// KeyCookieDomains overrides the cookie domains from ConfigMap
+	// Value: comma-separated domains (e.g., "example.com,corp.example.com")
+	KeyCookieDomains = AnnotationPrefix + "cookie-domains"
+	
+	// ===== Routing Overrides (override ConfigMap values) =====
+
+	// KeyRedirectURL overrides the OAuth callback URL from ConfigMap
+	// Value: full URL (e.g., "https://myapp.example.com/oauth2/callback")
+	// IMPORTANT: Usually needs to be set per-service
+	KeyRedirectURL = AnnotationPrefix + "redirect-url"
+
+	// KeyExtraJWTIssuers overrides/adds extra JWT issuers from ConfigMap
+	// Value: comma-separated "issuer=audience" pairs
+	// Example: "https://issuer1.com=api,https://issuer2.com=api"
+	KeyExtraJWTIssuers = AnnotationPrefix + "extra-jwt-issuers"
+
+	// ===== Header Overrides (override ConfigMap values) =====
+
+	// KeyPassAccessToken overrides pass-access-token from ConfigMap
+	// Value: "true" or "false"
+	KeyPassAccessToken = AnnotationPrefix + "pass-access-token"
+
+	// KeySetXAuthRequest overrides set-xauthrequest from ConfigMap
+	// Value: "true" or "false"
+	KeySetXAuthRequest = AnnotationPrefix + "set-xauthrequest"
+
+	// KeyPassAuthorizationHeader overrides pass-authorization-header from ConfigMap
+	// Value: "true" or "false"
+	KeyPassAuthorizationHeader = AnnotationPrefix + "pass-authorization-header"
+
+	// ===== Behavior Overrides (override ConfigMap values) =====
+
+	// KeySkipProviderButton overrides skip-provider-button from ConfigMap
+	// Value: "true" or "false"
+	KeySkipProviderButton = AnnotationPrefix + "skip-provider-button"
 )
 
 
@@ -61,12 +160,17 @@ const (
 )
 
 // Config holds parsed annotation values for a pod
+// This includes both annotation-only settings and ConfigMap overrides
 type Config struct {
+	// ===== Core Settings =====
+
 	// Enabled indicates whether oauth2-proxy should be injected
 	Enabled bool
 
 	// ConfigMapName is the name of the ConfigMap containing oauth2-proxy settings
 	ConfigMapName string
+
+	// ===== Port/Routing Settings (annotation-only) =====
 
 	// ProtectedPort is the name of the port that should be proxied
 	ProtectedPort string
@@ -76,12 +180,92 @@ type Config struct {
 
 	// APIPaths is the list of paths that should not offer login and instead require a JWT
 	APIPaths []string
-	
-	// Whether or not to skip login when bearer tokens are provided. Defaults to false (i.e. do not skip login)
+
+	// SkipJWTBearerTokens skips login when bearer tokens are provided
+	// Defaults to false (i.e. do not skip login)
 	SkipJWTBearerTokens bool
 
 	// UpstreamTLS is the TLS mode for upstream connections
 	UpstreamTLS UpstreamTLSMode
+
+	// ===== ConfigMap Overrides =====
+	// These fields override the corresponding ConfigMap values when set.
+	// Use pointer types or "set" flags to distinguish "not set" from "set to empty/false"
+
+	// Overrides contains all the fields that can override ConfigMap values
+	Overrides ConfigOverrides
+}
+
+// ConfigOverrides holds annotation values that override ConfigMap settings
+// Pointer types are used so nil means "use ConfigMap value" vs empty/false meaning "override to empty/false"
+type ConfigOverrides struct {
+	// ===== Identity Overrides =====
+
+	// ClientID overrides the OAuth2 client ID
+	ClientID *string
+
+	// ClientSecretRef overrides the client secret reference
+	ClientSecretRef *string
+
+	// CookieSecretRef overrides the cookie secret reference
+	CookieSecretRef *string
+
+	// Scope overrides the scope
+	Scope *string
+
+	// PKCEEnabled overrides the PKCE setting
+	PKCEEnabled *bool
+
+	// ===== Authorization Overrides =====
+
+	// EmailDomains overrides allowed email domains
+	// nil = use ConfigMap, empty slice = explicitly no domains allowed
+	EmailDomains []string
+	EmailDomainsSet bool
+
+	// AllowedGroups overrides allowed groups
+	AllowedGroups []string
+	AllowedGroupsSet bool
+
+	// AllowedEmails overrides allowed email addresses
+	// AllowedEmails []string
+	// AllowedEmailsSet bool
+
+	// WhitelistDomains overrides allowed domains
+	WhitelistDomains []string
+	WhitelistDomainsSet bool
+
+	// CookieName overrides cookie name
+	CookieName *string
+	
+	// CookieDomains overrides cookie domains
+	CookieDomains []string
+	CookieDomainsSet bool
+
+	// ===== Routing Overrides =====
+
+	// RedirectURL overrides the OAuth callback URL
+	RedirectURL *string
+
+	// ExtraJWTIssuers overrides extra JWT issuers
+	ExtraJWTIssuers []string
+	ExtraJWTIssuersSet bool
+
+	// ===== Header Overrides =====
+
+	// PassAccessToken overrides pass-access-token
+	PassAccessToken *bool
+
+	// SetXAuthRequest overrides set-xauthrequest
+	SetXAuthRequest *bool
+
+	// PassAuthorizationHeader overrides pass-authorization-header
+	PassAuthorizationHeader *bool
+
+	// ===== Behavior Overrides =====
+
+	// SkipProviderButton overrides skip-provider-button
+	SkipProviderButton *bool
 }
 
 // Parser defines the interface for parsing pod annotations
@@ -97,67 +281,177 @@ func NewParser() *AnnotationParser {
 	return &AnnotationParser{}
 }
 
+// Parse extracts oauth2-proxy configuration from pod annotations
 func (p *AnnotationParser) Parse(annotations map[string]string) (*Config, error) {
 	var (
-		cm string
-		port string = "http"
-		ignorePaths []string
-		apiPaths []string
-		skipJWTBearerTokens bool = false
-		upstreamTLS UpstreamTLSMode = UpstreamNoTLS
+		cfg *Config = &Config{
+			ProtectedPort: "http",
+			IgnorePaths: []string{},
+			APIPaths: []string{},
+			SkipJWTBearerTokens: false,
+			UpstreamTLS: UpstreamNoTLS,
+			Overrides: ConfigOverrides{},
+		}
 	)
-	
+
 	if annotations[KeyEnabled] != "true" {
-		return &Config{Enabled: false}, nil		
+		return &Config{Enabled: false}, nil
 	}
 
-	cm, ok := annotations[KeyConfig]
-	if !ok {
+	if v, ok := annotations[KeyConfig]; ok {
+		cfg.ConfigMapName = v
+	} else {
 		return nil, fmt.Errorf("required annotation %s not found", KeyConfig)
 	}
-	
-	port, ok = annotations[KeyProtectedPort]
-	if ok {
-		port = strings.TrimSpace(port)
+
+	if v, ok := annotations[KeyProtectedPort];ok {
+		cfg.ProtectedPort = strings.TrimSpace(v)
 	}
 
-	ignorePathsStr, ok := annotations[KeyIgnorePaths]
-	if ok {
-		ignorePaths = parsePaths(ignorePathsStr)
+	if v, ok := annotations[KeyIgnorePaths]; ok {
+		cfg.IgnorePaths = parsePaths(v)
 	}
 
-	apiPathsStr, ok := annotations[KeyAPIPaths]
-	if ok {
-		apiPaths = parsePaths(apiPathsStr)
+	if v, ok := annotations[KeyAPIPaths]; ok {
+		cfg.APIPaths = parsePaths(v)
+	}
+
+	if v, ok := annotations[KeySkipJWTBearerTokens]; ok {
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "true", "1":
+			cfg.SkipJWTBearerTokens = true
+		case "false", "0":
+			cfg.SkipJWTBearerTokens = false
+		default:
+			return nil, fmt.Errorf("invalid skip-jwt value: %q (must be 'true', 'false', '1', or '0')", v)
+		}
+	}
+
+	if v, ok := annotations[KeyUpstreamTLS]; ok {
+		if v != string(UpstreamNoTLS) && v != string(UpstreamTLSInsecure) && v != string(UpstreamTLSSecure) {
+			return nil, fmt.Errorf("invalid upstream-tls value: %q (must be %s, %s, or %s)", v, UpstreamNoTLS, UpstreamTLSInsecure, UpstreamTLSSecure)
+		}
+		cfg.UpstreamTLS = UpstreamTLSMode(v)
+	}
+
+	if v, ok := annotations[KeyClientID]; ok {
+		s := strings.TrimSpace(v)
+		cfg.Overrides.ClientID = &s
 	}
 	
-	bearer, ok := annotations[KeySkipJWTBearerTokens]
-	if ok {
-		if bearer != "true" && bearer != "false" {
-			return nil, fmt.Errorf("invalid skip-jwt value: %q (must be 'true' or 'false')", bearer)
+	if v, ok := annotations[KeyClientSecretRef]; ok {
+		s := strings.TrimSpace(v)
+		cfg.Overrides.ClientSecretRef = &s
+	}
+
+	if v, ok := annotations[KeyCookieSecretRef]; ok {
+		s := strings.TrimSpace(v)
+		cfg.Overrides.CookieSecretRef = &s
+	}
+
+	if v, ok := annotations[KeyScope]; ok {
+		s := strings.TrimSpace(v)
+		cfg.Overrides.Scope = &s
+	}
+
+	if v, ok := annotations[KeyPKCEEnabled]; ok {
+		b, err := parseBoolPtr(v)
+		if err != nil{
+			return nil, err
 		}
-		if bearer == "true" {
-			skipJWTBearerTokens = true
-		}
+		cfg.Overrides.PKCEEnabled = b
+	}
+
+	if v, ok := annotations[KeyEmailDomains]; ok {
+		cfg.Overrides.EmailDomains = parsePaths(v)
+		cfg.Overrides.EmailDomainsSet = true
+	}
+
+	if v, ok := annotations[KeyAllowedGroups]; ok {
+		cfg.Overrides.AllowedGroups = parsePaths(v)
+		cfg.Overrides.AllowedGroupsSet = true
+	}
+
+	// if v, ok := annotations[KeyAllowedEmails]; ok {
+		// cfg.Overrides.AllowedEmails = parsePaths(v)
+		// cfg.Overrides.AllowedEmailsSet = true
+	// }
+
+	if v, ok := annotations[KeyWhitelistDomains]; ok {
+		cfg.Overrides.WhitelistDomains = parsePaths(v)
+		cfg.Overrides.WhitelistDomainsSet = true
+	}
+
+	if v, ok := annotations[KeyCookieName]; ok {
+		s := strings.TrimSpace(v)
+		cfg.Overrides.CookieName = &s
+	}
+
+	if v, ok := annotations[KeyCookieDomains]; ok {
+		cfg.Overrides.CookieDomains= parsePaths(v)
+		cfg.Overrides.CookieDomainsSet = true
 	}
 	
-	tls, ok := annotations[KeyUpstreamTLS]
-	if ok {
-		if tls != string(UpstreamNoTLS) && tls != string(UpstreamTLSInsecure) && tls != string(UpstreamTLSSecure) {
-			return nil, fmt.Errorf("invalid upstream-tls value: %q (must be %s, %s, or %s)", tls, UpstreamNoTLS, UpstreamTLSInsecure, UpstreamTLSSecure)
+	if v, ok := annotations[KeyRedirectURL]; ok {
+		s := strings.TrimSpace(v)
+		cfg.Overrides.RedirectURL = &s
+	}
+
+	if v, ok := annotations[KeyExtraJWTIssuers]; ok {
+		cfg.Overrides.ExtraJWTIssuers = parsePaths(v)
+		cfg.Overrides.ExtraJWTIssuersSet = true
+	}
+
+	if v, ok := annotations[KeyPassAccessToken]; ok {
+		b, err := parseBoolPtr(v)
+		if err != nil{
+			return nil, err
 		}
-		upstreamTLS = UpstreamTLSMode(tls)
+		cfg.Overrides.PassAccessToken = b
+	}
+
+	if v, ok := annotations[KeySetXAuthRequest]; ok {
+		b, err := parseBoolPtr(v)
+		if err != nil{
+			return nil, err
+		}
+		cfg.Overrides.SetXAuthRequest = b
+	}
+
+	if v, ok := annotations[KeyPassAuthorizationHeader]; ok {
+		b, err := parseBoolPtr(v)
+		if err != nil{
+			return nil, err
+		}
+		cfg.Overrides.PassAuthorizationHeader = b
+	}
+
+	if v, ok := annotations[KeySkipProviderButton]; ok {
+		b, err := parseBoolPtr(v)
+		if err != nil{
+			return nil, err
+		}
+		cfg.Overrides.SkipProviderButton = b
 	}
 	
-	return &Config{
-		Enabled: true,
-		ConfigMapName: cm,
-		ProtectedPort: port,
-		IgnorePaths: ignorePaths,
-		APIPaths: apiPaths,
-		SkipJWTBearerTokens: skipJWTBearerTokens,
-		UpstreamTLS: upstreamTLS,
-	}, nil
+	return cfg, nil
+}
+
+// parseBoolPtr parses a boolean string and returns a pointer
+// This distinguishes "not set" (nil) from "set to false" (*false)
+func parseBoolPtr(value string) (*bool, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "":
+		return nil, nil
+	case "true", "1":
+		pt := true
+		return &pt, nil
+	case "false", "0":
+		pt := false
+		return &pt, nil
+	default:
+		return nil, fmt.Errorf("invalid boolean value: %q (must be 'true', 'false', '1', or '0')", value)
+	}
 }
 
 func parsePaths(pathsStr string) ([]string) {

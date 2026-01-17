@@ -67,30 +67,26 @@ func parseConfigMap(data map[string]string, name, namespace string) (*ProxyConfi
 	}
 	var err error
 
-	provider, ok := data[CMKeyProvider]
-	if ok {
-		cfg.Provider = strings.TrimSpace(provider)
+	if v, ok := data[CMKeyProvider]; ok {
+		cfg.Provider = strings.TrimSpace(v)
 	} else {
 		return nil, fmt.Errorf("configmap missing required key %s", CMKeyProvider)
 	}
 
-	issuer, ok := data[CMKeyOIDCIssuerURL]
-	if ok {
-		cfg.OIDCIssuerURL = strings.TrimSpace(issuer)
-	} else if provider == "oidc" {
+	if v, ok := data[CMKeyOIDCIssuerURL]; ok {
+		cfg.OIDCIssuerURL = strings.TrimSpace(v)
+	} else if cfg.Provider == "oidc" {
 		return nil, fmt.Errorf("provider type oidc requires %s", CMKeyOIDCIssuerURL)
 	}
 
-	cliendId, ok := data[CMKeyClientID]
-	if ok {
-		cfg.ClientID = strings.TrimSpace(cliendId)
+	if v, ok := data[CMKeyClientID]; ok {
+		cfg.ClientID = strings.TrimSpace(v)
 	} else {
 		return nil, fmt.Errorf("configmap missing required key %s", CMKeyClientID)
 	}
 
-	pkce, ok := data[CMKeyPKCEEnabled]
-	if ok {
-		cfg.PKCEEnabled, err = parseBool(pkce, false)
+	if v, ok := data[CMKeyPKCEEnabled]; ok {
+		cfg.PKCEEnabled, err = parseBool(v, false)
 		if err != nil {
 			return nil, err
 		}
@@ -98,9 +94,8 @@ func parseConfigMap(data map[string]string, name, namespace string) (*ProxyConfi
 		cfg.PKCEEnabled = false
 	}
 
-	clientSecretRef, ok := data[CMKeyClientSecretRef]
-	if ok {
-		cfg.ClientSecretRef, err = parseSecretRef(clientSecretRef, "client-secret")
+	if v, ok := data[CMKeyClientSecretRef]; ok {
+		cfg.ClientSecretRef, err = parseSecretRef(v, "client-secret")
 		if err != nil {
 			return nil, err
 		}
@@ -108,9 +103,8 @@ func parseConfigMap(data map[string]string, name, namespace string) (*ProxyConfi
 		return nil, fmt.Errorf("configmap missing key %s when %s is false", CMKeyClientSecretRef, CMKeyPKCEEnabled)
 	}
 
-	cookieSecretRef, ok := data[CMKeyCookieSecretRef]
-	if ok {
-		cfg.CookieSecretRef, err = parseSecretRef(cookieSecretRef, "cookie-secret")
+	if v, ok := data[CMKeyCookieSecretRef]; ok {
+		cfg.CookieSecretRef, err = parseSecretRef(v, "cookie-secret")
 		if err != nil {
 			return nil, err
 		}
@@ -118,16 +112,14 @@ func parseConfigMap(data map[string]string, name, namespace string) (*ProxyConfi
 		return nil, fmt.Errorf("configmap missing key %s", CMKeyCookieSecretRef)
 	}
 
-	cookieDomains, ok := data[CMKeyCookieDomains]
-	if ok {
-		cfg.CookieDomains = splitAndTrim(cookieDomains, ",")
+	if v, ok := data[CMKeyCookieDomains]; ok {
+		cfg.CookieDomains = splitAndTrim(v, ",")
 	} else {
 		cfg.CookieDomains = []string{}
 	}
 
-	cookieSecure, ok := data[CMKeyCookieSecure]
-	if ok {
-		cfg.CookieSecure, err = parseBool(cookieSecure, true)
+	if v, ok := data[CMKeyCookieSecure]; ok {
+		cfg.CookieSecure, err = parseBool(v, true)
 		if err != nil {
 			return nil, err
 		}
@@ -135,9 +127,8 @@ func parseConfigMap(data map[string]string, name, namespace string) (*ProxyConfi
 		cfg.CookieSecure = true
 	}
 
-	skipProviderButton, ok := data[CMKeySkipProviderButton]
-	if ok {
-		cfg.SkipProviderButton, err = parseBool(skipProviderButton, false)
+	if v, ok := data[CMKeySkipProviderButton]; ok {
+		cfg.SkipProviderButton, err = parseBool(v, false)
 		if err != nil {
 			return nil, err
 		}
@@ -145,29 +136,75 @@ func parseConfigMap(data map[string]string, name, namespace string) (*ProxyConfi
 		cfg.SkipProviderButton = false
 	}
 
-	emailDomains, ok := data[CMKeyEmailDomains]
-	if ok {
-		cfg.EmailDomains = splitAndTrim(emailDomains, ",")
+	if v, ok := data[CMKeyEmailDomains]; ok {
+		cfg.EmailDomains = splitAndTrim(v, ",")
 	} else {
 		cfg.EmailDomains = []string{}
 	}
 
-	allowedGroups, ok := data[CMKeyAllowedGroups]
-	if ok {
-		cfg.AllowedGroups = splitAndTrim(allowedGroups, ",")
-
+	if v, ok := data[CMKeyAllowedGroups]; ok {
+		cfg.AllowedGroups = splitAndTrim(v, ",")
 	}
 
-	extraArgs, ok := data[CMKeyExtraArgs]
-	if ok {
-		cfg.ExtraArgs = splitAndTrim(extraArgs, "\n")
-
+	if v, ok := data[CMKeyExtraArgs]; ok {
+		cfg.ExtraArgs = splitAndTrim(v, "\n")
 	}
 
-	proxyImage, ok := data[CMKeyProxyImage]
-	if ok {
-		cfg.ProxyImage = strings.TrimSpace(proxyImage)
+	if v, ok := data[CMKeyProxyImage]; ok {
+		cfg.ProxyImage = strings.TrimSpace(v)
 	}
+
+	if v, ok := data[CMKeyOIDCGroupsClaim]; ok {
+		cfg.OIDCGroupsClaim = strings.TrimSpace(v)
+	} else {
+		cfg.OIDCGroupsClaim = "groups" // default
+	}
+
+	if v, ok := data[CMKeyScope]; ok {
+		cfg.Scope = strings.TrimSpace(v)
+	}
+
+	if v, ok := data[CMKeyCookieName]; ok {
+		cfg.CookieName = strings.TrimSpace(v)
+	}
+
+	// if v, ok := data[CMKeyAllowedEmails]; ok {
+	// 	cfg.AllowedEmails = splitAndTrim(v, ",")
+	// }
+
+	if v, ok := data[CMKeyWhitelistDomains]; ok {
+		cfg.WhitelistDomains = splitAndTrim(v, ",")
+	}
+
+	if v, ok := data[CMKeyRedirectURL]; ok {
+		cfg.RedirectURL = strings.TrimSpace(v)
+	}
+
+	if v, ok := data[CMKeyExtraJWTIssuers]; ok {
+		cfg.ExtraJWTIssuers = splitAndTrim(v, ",")
+	}
+
+	if v, ok := data[CMKeyPassAccessToken]; ok {
+		cfg.PassAccessToken, err = parseBool(v, false)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if v, ok := data[CMKeySetXAuthRequest]; ok {
+		cfg.SetXAuthRequest, err = parseBool(v, false)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if v, ok := data[CMKeyPassAuthorizationHeader]; ok {
+		cfg.PassAuthorizationHeader, err = parseBool(v, false)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	
 	return cfg, nil
 }

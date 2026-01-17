@@ -31,13 +31,39 @@ Pods opt-in via annotations. Example:
 ```yaml
 metadata:
   annotations:
+    # === Core (required) ===
     spacemule.net/oauth2-proxy.enabled: "true"
     spacemule.net/oauth2-proxy.config: "plex-config"  # references a ConfigMap
+
+    # === Port/Routing (annotation-only) ===
     spacemule.net/oauth2-proxy.protected-port: "http"  # port NAME to protect (default: "http")
     spacemule.net/oauth2-proxy.upstream-tls: "http"  # "http" (default), "https", or "https-insecure"
     spacemule.net/oauth2-proxy.ignore-paths: "/health,/metrics"  # paths to skip auth
     spacemule.net/oauth2-proxy.api-paths: "/api/"  # paths requiring JWT only (no login redirect)
     spacemule.net/oauth2-proxy.skip-jwt-bearer-tokens: "true"  # skip login when JWT provided
+
+    # === ConfigMap Overrides (optional - override namespace defaults) ===
+    # Identity overrides
+    spacemule.net/oauth2-proxy.client-id: "my-service-client"  # different OAuth app
+    spacemule.net/oauth2-proxy.client-secret-ref: "my-service-secrets:client-secret"
+    spacemule.net/oauth2-proxy.pkce-enabled: "true"
+
+    # Authorization overrides (stricter than namespace default)
+    spacemule.net/oauth2-proxy.allowed-groups: "admin,devops"  # restrict to specific groups
+    spacemule.net/oauth2-proxy.allowed-emails: "alice@example.com,bob@example.com"
+    spacemule.net/oauth2-proxy.email-domains: "example.com"
+
+    # Routing overrides
+    spacemule.net/oauth2-proxy.redirect-url: "https://myservice.example.com/oauth2/callback"
+    spacemule.net/oauth2-proxy.extra-jwt-issuers: "https://issuer.example.com=myservice-api"
+
+    # Header overrides
+    spacemule.net/oauth2-proxy.pass-access-token: "true"
+    spacemule.net/oauth2-proxy.set-xauthrequest: "true"
+    spacemule.net/oauth2-proxy.pass-authorization-header: "true"
+
+    # Behavior overrides
+    spacemule.net/oauth2-proxy.skip-provider-button: "true"
 ```
 
 ### Single Port Protection
@@ -195,9 +221,60 @@ These are the main contracts to implement:
 - **Failure mode**: Mutation fails if ConfigMap doesn't exist (fail secure)
 - **PKCE support**: Set `pkce-enabled: "true"` in ConfigMap to skip client secret requirement
 
+## Configuration Architecture
+
+### ConfigMap as Namespace Defaults, Annotations as Overrides
+
+The design supports a "one ConfigMap per namespace, override per service" pattern:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    ConfigMap (Namespace-level)                   │
+│  Base configuration shared across services in a namespace        │
+│  - OIDC Issuer, Provider type (namespace-wide)                   │
+│  - Default cookie settings                                       │
+│  - Default allowed-groups, email-domains                         │
+├─────────────────────────────────────────────────────────────────┤
+│                    Pod Annotations (Per-service)                 │
+│  Override specific settings for this service                     │
+│  - Different client-id/secret (different OAuth app)              │
+│  - Different redirect-url (service-specific callback)            │
+│  - Stricter allowed-groups, allowed-emails                       │
+│  - Service-specific extra-jwt-issuers                            │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Field Categories
+
+| Category | ConfigMap Only | Both (CM + Annotation Override) |
+|----------|---------------|--------------------------------|
+| **Provider** | provider, oidc-issuer-url, oidc-groups-claim, scope | - |
+| **Identity** | - | client-id, client-secret-ref, pkce-enabled |
+| **Cookies** | cookie-secure | cookie-secret-ref, cookie-domains |
+| **Authorization** | whitelist-domains | email-domains, allowed-groups, allowed-emails |
+| **Routing** | - | redirect-url, extra-jwt-issuers |
+| **Headers** | - | pass-access-token, set-xauthrequest, pass-authorization-header |
+| **Behavior** | extra-args, proxy-image | skip-provider-button |
+
+Annotation-only fields: protected-port, upstream-tls, ignore-paths, api-paths, skip-jwt-bearer-tokens
+
+### Override Semantics
+
+- **Pointer fields** (`*string`, `*bool`): `nil` = use ConfigMap value; non-nil = override
+- **Slice fields with Set flag**: `Set=false` = use ConfigMap; `Set=true` = use annotation (even if empty)
+- This allows explicitly setting "no groups allowed" vs "use default groups"
+
 ## TODO
 
-- Add annotations for oauth2-proxy access control options (allowed-groups, allowed-emails, etc.) - these need to be per-service rather than per-ConfigMap
+- ✅ ~~Add annotations for oauth2-proxy access control options~~ (Done: types.go, parser.go updated)
+- ✅ ~~Update `internal/config/loader.go` to parse new ConfigMap fields~~ (Done)
+- ✅ ~~Add types: `EffectiveConfig`, `ConfigOverrides`, new fields in `ProxyConfig`~~ (Done)
+- ✅ ~~Add annotation constants for overrides~~ (Done in parser.go)
+- ✅ ~~Implement `internal/annotation/parser.go` Parse()~~ (Done)
+- ✅ ~~Implement `internal/config/merge.go`~~ (Done)
+- Update `internal/mutation/sidecar.go` to use EffectiveConfig (see TODOs in file)
+- Update `internal/mutation/mutator.go` to integrate config merging (see TODOs in file)
+- Update `cmd/webhook/main.go` to wire up Merger (see TODOs in file)
 
 ## Future Projects
 

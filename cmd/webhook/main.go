@@ -29,6 +29,7 @@ type cmdConfig struct {
     configNamespace string
 }
 
+// main is the entrypoint for the webhook server
 func main() {
 	klog.InitFlags(nil)
 	cfg := parseFlags()
@@ -39,7 +40,8 @@ func main() {
 	parser := annotation.NewParser()
 	loader := config.NewLoader(client, cfg.configNamespace)
 	builder := mutation.NewSidecarBuilder()
-	mutator := mutation.NewPodMutator(parser, loader, builder)
+	merger := config.NewMerger()
+	mutator := mutation.NewPodMutator(parser, loader, builder, merger)
 	handler := admission.NewHandler(mutator)
 	server, err := setupServer(handler, client, cfg.certFile, cfg.keyFile, cfg.port)
 	if err != nil {
@@ -53,7 +55,7 @@ func main() {
 			os.Exit(1)
 		}
 	}()
-	
+
 	gracefulShutdown(server)
 }
 
