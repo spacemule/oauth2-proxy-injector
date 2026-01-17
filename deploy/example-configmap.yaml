@@ -1,6 +1,9 @@
 # Example oauth2-proxy ConfigMap
 # This ConfigMap contains the oauth2-proxy settings that will be applied
 # to pods with the annotation: spacemule.net/oauth2-proxy.config: "example-oauth2-config"
+#
+# Many of these settings can be overridden per-pod via annotations.
+# See the example pod below for override annotations.
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -10,12 +13,24 @@ metadata:
   labels:
     app.kubernetes.io/component: oauth2-proxy-config
 data:
+  # ===== Provider Settings (ConfigMap only - shared across namespace) =====
+
   # OAuth2 provider type
   # Options: oidc, google, github, azure, keycloak, etc.
   provider: "oidc"
 
   # OIDC issuer URL (required for provider=oidc)
   oidc-issuer-url: "https://auth.example.com/realms/myrealm"
+
+  # OIDC groups claim - which claim contains group membership
+  # Default: "groups" - override if your provider uses a different claim
+  # oidc-groups-claim: "groups"
+
+  # OAuth scopes to request
+  # Default: "openid email profile" for OIDC
+  # scope: "openid email profile groups"
+
+  # ===== Identity Settings (overridable via annotations) =====
 
   # OAuth2 client ID
   client-id: "my-application"
@@ -28,6 +43,11 @@ data:
   #   --from-literal=cookie-secret=$(openssl rand -base64 32 | head -c 32)
   client-secret-ref: "oauth2-secrets:client-secret"
 
+  # Use PKCE flow (allows skipping client-secret-ref for public clients)
+  # pkce-enabled: "true"
+
+  # ===== Cookie Settings =====
+
   # Reference to Secret containing cookie encryption secret
   # Must be 16, 24, or 32 bytes for AES encryption
   cookie-secret-ref: "oauth2-secrets:cookie-secret"
@@ -39,6 +59,12 @@ data:
   # Require HTTPS for cookies (should be true in production!)
   cookie-secure: "true"
 
+  # Cookie name (default: "_oauth2_proxy")
+  # Useful to prevent cookie collision when multiple proxied services share a domain
+  # cookie-name: "_oauth2_proxy_myapp"
+
+  # ===== Authorization Settings (overridable via annotations) =====
+
   # Allowed email domains (comma-separated)
   # Use "*" to allow all domains
   email-domains: "example.com,corp.example.com"
@@ -48,21 +74,47 @@ data:
   # Works with providers that support group claims
   # allowed-groups: "developers,admins"
 
+  # Domains allowed for post-auth redirects (security feature)
+  # Prevents open redirect vulnerabilities
+  # whitelist-domains: ".example.com,.corp.example.com"
+
+  # ===== Routing Settings (overridable via annotations) =====
+
+  # OAuth callback URL (usually needs to be different per-service)
+  # Example: "https://myapp.example.com/oauth2/callback"
+  # redirect-url: "https://myapp.example.com/oauth2/callback"
+
+  # Extra JWT issuers for bearer token auth (comma-separated "issuer=audience" pairs)
+  # Example: "https://issuer1.com=api,https://issuer2.com=api"
+  # extra-jwt-issuers: "https://issuer1.com=api"
+
+  # ===== Header/Token Passing Settings (overridable via annotations) =====
+
+  # Pass OAuth access token to upstream via X-Forwarded-Access-Token
+  # pass-access-token: "true"
+
+  # Set X-Auth-Request-User, X-Auth-Request-Email headers
+  # set-xauthrequest: "true"
+
+  # Pass OIDC ID token via Authorization: Bearer header
+  # pass-authorization-header: "true"
+
+  # ===== Behavior Settings (overridable via annotations) =====
+
   # Skip the "Sign in with X" button page
   # Set to true to redirect directly to the provider
   skip-provider-button: "true"
 
-  # Use PKCE flow (allows skipping client-secret-ref)
-  # pkce-enabled: "true"
+  # ===== Container Settings (ConfigMap only - not overridable) =====
 
   # oauth2-proxy container image
   proxy-image: "quay.io/oauth2-proxy/oauth2-proxy:v7.5.1"
 
   # Extra arguments (newline-separated)
-  extra-args: |
-    --pass-access-token=true
-    --set-xauthrequest=true
-    --pass-user-headers=true
+  # WARNING: Not overridable via annotations for security
+  # extra-args: |
+  #   --pass-user-headers=true
+  #   --reverse-proxy=true
 
 ---
 # Example Secret for oauth2-proxy credentials
@@ -83,27 +135,58 @@ stringData:
 
 ---
 # Example Pod using the oauth2-proxy injection
-# This demonstrates how to annotate a pod for sidecar injection
+# This demonstrates ALL available annotations
 apiVersion: v1
 kind: Pod
 metadata:
   name: example-protected-app
   namespace: default
   annotations:
-    # Enable oauth2-proxy injection
+    # ===== Core (required) =====
     spacemule.net/oauth2-proxy.enabled: "true"
-    # Reference the ConfigMap above
-    spacemule.net/oauth2-proxy.config: "example-oauth2-config"
-    # Protect the port named "http" (default, can omit)
+    spacemule.net/oauth2-proxy.config: "example-oauth2-config"  # references ConfigMap above
+
+    # ===== Port/Routing (annotation-only) =====
+    # Protected port name (default: "http")
     spacemule.net/oauth2-proxy.protected-port: "http"
-    # Paths to skip authentication (comma-separated)
-    spacemule.net/oauth2-proxy.ignore-paths: "/health,/metrics"
+    # Paths to skip authentication (comma-separated regex patterns)
+    # Format: method=path_regex OR method!=path_regex. For all methods: path_regex
+    spacemule.net/oauth2-proxy.ignore-paths: "/health,/metrics,GET=/ready"
     # Paths requiring JWT only, no login redirect (comma-separated)
-    spacemule.net/oauth2-proxy.api-paths: "/api/"
+    spacemule.net/oauth2-proxy.api-paths: "/api/,/v1/"
     # Skip login page when JWT bearer token is provided
     spacemule.net/oauth2-proxy.skip-jwt-bearer-tokens: "false"
     # Upstream TLS mode: "http" (default), "https", or "https-insecure"
     spacemule.net/oauth2-proxy.upstream-tls: "http"
+
+    # ===== Identity Overrides (override ConfigMap values) =====
+    # Different OAuth app for this service
+    # spacemule.net/oauth2-proxy.client-id: "my-service-client"
+    # spacemule.net/oauth2-proxy.client-secret-ref: "my-service-secrets:client-secret"
+    # spacemule.net/oauth2-proxy.cookie-secret-ref: "my-service-secrets:cookie-secret"
+    # spacemule.net/oauth2-proxy.scope: "openid email profile groups"
+    # spacemule.net/oauth2-proxy.pkce-enabled: "true"
+
+    # ===== Authorization Overrides (stricter than namespace default) =====
+    # spacemule.net/oauth2-proxy.email-domains: "example.com"
+    # spacemule.net/oauth2-proxy.allowed-groups: "admin,devops"
+    # spacemule.net/oauth2-proxy.whitelist-domains: ".example.com"
+
+    # ===== Cookie Overrides =====
+    # spacemule.net/oauth2-proxy.cookie-name: "_oauth2_proxy_myservice"
+    # spacemule.net/oauth2-proxy.cookie-domains: ".example.com"
+
+    # ===== Routing Overrides =====
+    # spacemule.net/oauth2-proxy.redirect-url: "https://myservice.example.com/oauth2/callback"
+    # spacemule.net/oauth2-proxy.extra-jwt-issuers: "https://issuer.example.com=myservice-api"
+
+    # ===== Header Overrides =====
+    # spacemule.net/oauth2-proxy.pass-access-token: "true"
+    # spacemule.net/oauth2-proxy.set-xauthrequest: "true"
+    # spacemule.net/oauth2-proxy.pass-authorization-header: "true"
+
+    # ===== Behavior Overrides =====
+    # spacemule.net/oauth2-proxy.skip-provider-button: "true"
 spec:
   containers:
     - name: app
@@ -112,4 +195,4 @@ spec:
         - containerPort: 8080
           name: http  # This named port will be protected
         - containerPort: 9090
-          name: metrics
+          name: metrics  # This port remains accessible directly
