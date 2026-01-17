@@ -297,6 +297,7 @@ func (p *AnnotationParser) Parse(annotations map[string]string) (*Config, error)
 	if annotations[KeyEnabled] != "true" {
 		return &Config{Enabled: false}, nil
 	}
+	cfg.Enabled = true
 
 	if v, ok := annotations[KeyConfig]; ok {
 		cfg.ConfigMapName = v
