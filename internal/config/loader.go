@@ -103,13 +103,13 @@ func parseConfigMap(data map[string]string, name, namespace string) (*ProxyConfi
 		return nil, fmt.Errorf("configmap missing key %s when %s is false", CMKeyClientSecretRef, CMKeyPKCEEnabled)
 	}
 
+	// CookieSecretRef is optional in ConfigMap - can be overridden via annotation
+	// Validation that it's set happens after merging in the mutator
 	if v, ok := data[CMKeyCookieSecretRef]; ok {
 		cfg.CookieSecretRef, err = parseSecretRef(v, "cookie-secret")
 		if err != nil {
 			return nil, err
 		}
-	} else {
-		return nil, fmt.Errorf("configmap missing key %s", CMKeyCookieSecretRef)
 	}
 
 	if v, ok := data[CMKeyCookieDomains]; ok {
