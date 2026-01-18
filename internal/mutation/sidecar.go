@@ -81,7 +81,7 @@ func buildArgs(cfg *config.EffectiveConfig, portMapping PortMapping) []string {
 	ret = append(ret, "--client-id="+cfg.ClientID)
 	ret = append(ret, "--http-address=0.0.0.0:4180")
 
-	if len(cfg.Upstreams) == 0 {
+	if cfg.Upstreams == nil {
 		switch cfg.UpstreamTLS {
 		case annotation.UpstreamNoTLS:
 			ret = append(ret, fmt.Sprintf("--upstream=http://127.0.0.1:%d", portMapping.ProxyPort))
