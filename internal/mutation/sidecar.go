@@ -68,15 +68,17 @@ func (b *OAuth2ProxySidecarBuilder) Build(
 }
 
 // buildArgs constructs the command-line arguments for oauth2-proxy
+//
+// Boolean flags use explicit --flag="true" or --flag="false" format for clarity
+// and predictability. This avoids ambiguity around default values.
 func buildArgs(cfg *config.EffectiveConfig, portMapping PortMapping) []string {
 	var ret []string
-	
-	ret = append(ret, "--provider=" + cfg.Provider)
-	ret = append(ret, "--oidc-issuer-url=" + cfg.OIDCIssuerURL)
-	ret = append(ret, "--client-id=" + cfg.ClientID)
-	ret = append(ret, "--http-address=0.0.0.0:4180" )
-	ret = append(ret, fmt.Sprintf("--cookie-secure=%t", cfg.CookieSecure))
-	
+
+	ret = append(ret, "--provider="+cfg.Provider)
+	ret = append(ret, "--oidc-issuer-url="+cfg.OIDCIssuerURL)
+	ret = append(ret, "--client-id="+cfg.ClientID)
+	ret = append(ret, "--http-address=0.0.0.0:4180")
+
 	switch cfg.UpstreamTLS {
 	case annotation.UpstreamNoTLS:
 		ret = append(ret, fmt.Sprintf("--upstream=http://127.0.0.1:%d", portMapping.ProxyPort))
@@ -84,32 +86,35 @@ func buildArgs(cfg *config.EffectiveConfig, portMapping PortMapping) []string {
 		ret = append(ret, fmt.Sprintf("--upstream=https://127.0.0.1:%d", portMapping.ProxyPort))
 	case annotation.UpstreamTLSInsecure:
 		ret = append(ret, fmt.Sprintf("--upstream=https://127.0.0.1:%d", portMapping.ProxyPort))
-		ret = append(ret, "--ssl-upstream-insecure-skip-verify")
+		ret = append(ret, "--ssl-upstream-insecure-skip-verify=true")
 	}
-	
+
+	if !cfg.CookieSecure {
+		ret = append(ret, "--cookie-secure=false")  // default is true
+	}
 	if cfg.SkipProviderButton {
-		ret = append(ret, "--skip-provider-button")
+		ret = append(ret, "--skip-provider-button=true")  // default is false
 	}
+	if cfg.SkipJWTBearerTokens {
+		ret = append(ret, "--skip-jwt-bearer-tokens=true")  // default is false
+	}
+	if cfg.PassAccessToken {
+		ret = append(ret, "--pass-access-token=true")  // default is false
+	}
+	if cfg.SetXAuthRequest {
+		ret = append(ret, "--set-xauthrequest=true")  // default is false
+	}
+	if cfg.PassAuthorizationHeader {
+		ret = append(ret, "--pass-authorization-header=true")  // default is false
+	}
+
 	if cfg.PKCEEnabled {
 		ret = append(ret, "--code-challenge-method=S256")
 		ret = append(ret, "--client-secret-file=/dev/null")
 	}
-	if cfg.SkipJWTBearerTokens {
-		ret = append(ret, "--skip-jwt-bearer-tokens")
-	}
-	if cfg.PassAccessToken {
-		ret = append(ret, "--pass-access-token")
-	}
-	if cfg.SetXAuthRequest {
-		ret = append(ret, "--set-xauthrequest")
-	}
-	if cfg.PassAuthorizationHeader {
-		ret = append(ret, "--pass-authorization-header")
-	}
-
 	
 	if cfg.Scope != "" {
-		ret = append(ret, fmt.Sprintf("--scope=\"%s\"", cfg.Scope))
+		ret = append(ret, "--scope=" + cfg.Scope)
 	}
 	if cfg.OIDCGroupsClaim != "" {
 		ret = append(ret, "--oidc-groups-claim=" + cfg.OIDCGroupsClaim)
@@ -215,4 +220,10 @@ func CalculatePortMapping(
 		}
 	}
 	return PortMapping{}, fmt.Errorf("matching port name %s not found", cfg.ProtectedPort)
+}
+
+// appendBoolFlag appends a boolean flag in --flag=true or --flag=false format
+func appendBoolFlag(args []string, flagName string, value bool) []string {
+	s := fmt.Sprintf("%s=%t", flagName, value)
+	return append(args, s)
 }

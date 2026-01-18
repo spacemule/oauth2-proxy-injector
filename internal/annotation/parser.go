@@ -25,8 +25,9 @@ const (
 	// Value: "true" or "false"
 	KeyEnabled = AnnotationPrefix + "enabled"
 
-	// KeyConfig references the ConfigMap name containing oauth2-proxy configuration
+	// KeyConfig optionally overrides the default ConfigMap name
 	// Value: ConfigMap name (e.g., "plex-config")
+	// If not set, uses the default ConfigMap configured in the webhook
 	KeyConfig = AnnotationPrefix + "config"
 
 	// KeyInjected is set by the webhook after injection to prevent double-injection
@@ -299,6 +300,8 @@ func (p *AnnotationParser) Parse(annotations map[string]string) (*Config, error)
 	}
 	cfg.Enabled = true
 
+	// TODO: ConfigMapName is now optional - if not set, mutator will use webhook's default
+	// Currently still required - change this to be optional
 	if v, ok := annotations[KeyConfig]; ok {
 		cfg.ConfigMapName = v
 	} else {

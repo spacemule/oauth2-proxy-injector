@@ -45,6 +45,11 @@ type PatchBuilder interface {
 	// RemovePort removes a port from a container
 	RemovePort(containerIndex, portIndex int) PatchBuilder
 
+	// ReplaceProbePort replaces a probe's port (from name to number)
+	// probeType is one of: "livenessProbe", "readinessProbe", "startupProbe"
+	// handlerType is one of: "httpGet", "tcpSocket"
+	ReplaceProbePort(containerIndex int, probeType, handlerType string, port int32) PatchBuilder
+
 	// Build returns the accumulated patch operations
 	Build() []PatchOperation
 }
@@ -170,6 +175,17 @@ func (b *JSONPatchBuilder) RemovePort(containerIndex, portIndex int) PatchBuilde
 	b.operations = append(b.operations, PatchOperation{
 		Op: "remove",
 		Path: fmt.Sprintf("/spec/containers/%d/ports/%d", containerIndex, portIndex),
+	})
+
+	return b
+}
+
+// ReplaceProbePort replaces a probe's port from a name to a number
+func (b *JSONPatchBuilder) ReplaceProbePort(containerIndex int, probeType, handlerType string, port int32) PatchBuilder {
+	b.operations = append(b.operations, PatchOperation{
+		Op: "replace",
+		Path: fmt.Sprintf("/spec/containers/%d/%s/%s/port", containerIndex, probeType, handlerType),
+		Value: port,
 	})
 
 	return b

@@ -1,0 +1,197 @@
+# Default values for oauth2-proxy-injector.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# This will set the replicaset count more information can be found here: https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/
+replicaCount: 1
+
+# This sets the container image more information can be found here: https://kubernetes.io/docs/concepts/containers/images/
+image:
+  repository: git.spacemule.net/spacemule.net/oauth2-proxy-injector
+  # This sets the pull policy for images.
+  pullPolicy: Always
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: 190df826b777ee50a580e7efb35cc630442873f6
+
+# This is for the secrets for pulling an image from a private repository more information can be found here: https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/
+imagePullSecrets:
+- name: gitea-cred
+# This is to override the chart name.
+nameOverride: ''
+fullnameOverride: ''
+
+# Webhook configuration
+webhook:
+  # Port the webhook listens on
+  port: 8443
+  # Webhook domain used in MutatingWebhookConfiguration
+  domain: spacemule.net
+  # Failure policy: Fail or Ignore
+  failurePolicy: Fail
+  # Timeout for webhook calls
+  timeoutSeconds: 10
+
+# Default ConfigMap configuration
+# The webhook uses a single default ConfigMap. Pods can override via annotation.
+config:
+  # Name of the default ConfigMap containing oauth2-proxy settings
+  # Pods can override with: spacemule.net/oauth2-proxy.config annotation
+  defaultConfigMap: oauth2-proxy-config
+  # Namespace where the default ConfigMap lives (defaults to release namespace)
+  # configNamespace: ""
+
+# oauth2-proxy default ConfigMap settings
+# Set oauth2Proxy.enabled=true to create the default ConfigMap
+oauth2Proxy:
+  # Create the default oauth2-proxy ConfigMap
+  enabled: false
+
+  # ===== Provider Settings =====
+  provider: "oidc"
+  oidcIssuerUrl: ""  # e.g., "https://auth.example.com/realms/myrealm"
+  # oidcGroupsClaim: "groups"
+  # scope: "openid email profile"
+
+  # ===== Identity Settings =====
+  clientId: ""  # e.g., "my-application"
+  clientSecretRef: ""  # e.g., "oauth2-secrets:client-secret"
+  pkceEnabled: false
+
+  # ===== Cookie Settings =====
+  cookieSecretRef: ""  # e.g., "oauth2-secrets:cookie-secret"
+  # cookieDomains: ".example.com"
+  # cookieName: "_oauth2_proxy"
+  cookieSecure: true
+
+  # ===== Authorization Settings =====
+  emailDomains: "*"  # e.g., "example.com,corp.example.com"
+  # allowedGroups: ""  # e.g., "developers,admins"
+  # whitelistDomains: ""  # e.g., ".example.com"
+
+  # ===== Routing Settings =====
+  # redirectUrl: ""  # e.g., "https://myapp.example.com/oauth2/callback"
+  # extraJwtIssuers: ""  # e.g., "https://issuer.com=api"
+
+  # ===== Header/Token Passing =====
+  passAccessToken: false
+  setXAuthRequest: false
+  passAuthorizationHeader: false
+
+  # ===== Behavior =====
+  skipProviderButton: true
+
+  # ===== Container Settings =====
+  proxyImage: "quay.io/oauth2-proxy/oauth2-proxy:v7.5.1"
+  # extraArgs: |
+  #   --pass-user-headers=true
+  #   --reverse-proxy=true
+
+# Certificate configuration for TLS
+certificate:
+  # Duration of the certificate
+  duration: 8760h  # 1 year
+  # Renew before expiry
+  renewBefore: 720h  # 30 days
+  # cert-manager issuer reference
+  issuerRef:
+    name: self-signed
+    kind: ClusterIssuer
+    group: cert-manager.io
+
+# Namespace selector for the webhook
+# Only inject in namespaces with these labels
+namespaceSelector:
+  matchExpressions:
+  - key: oauth2-proxy-injection
+    operator: In
+    values: [enabled]
+    # Never inject into system namespaces
+  - key: kubernetes.io/metadata.name
+    operator: NotIn
+    values:
+    - kube-system
+    - kube-public
+    - kube-node-lease
+
+# This section builds out the service account more information can be found here: https://kubernetes.io/docs/concepts/security/service-accounts/
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Automatically mount a ServiceAccount's API credentials?
+  automount: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ''
+
+# This is for setting Kubernetes Annotations to a Pod.
+# For more information checkout: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
+podAnnotations: {}
+
+# This is for setting Kubernetes Labels to a Pod.
+# For more information checkout: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+podLabels: {}
+
+podSecurityContext: {}
+  # fsGroup: 2000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 65534  # nobody
+  capabilities:
+    drop:
+    - ALL
+
+# This is for setting up a service more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/
+service:
+  # This sets the service type more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/#publishing-services-service-types
+  type: ClusterIP
+  # This sets the ports more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/#field-spec-ports
+  port: 443
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi
+
+# This is to setup the liveness and readiness probes more information can be found here: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: https
+    scheme: HTTPS
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: https
+    scheme: HTTPS
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+# Additional volumes on the output Deployment definition.
+volumes: []
+# - name: foo
+#   secret:
+#     secretName: mysecret
+#     optional: false
+
+# Additional volumeMounts on the output Deployment definition.
+volumeMounts: []
+# - name: foo
+#   mountPath: "/etc/foo"
+#   readOnly: true
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}

@@ -28,9 +28,10 @@ spec:
             - --port=8443
             - --cert-file=/certs/tls.crt
             - --key-file=/certs/tls.key
-            # Empty = look in same namespace as pod being mutated
-            # Set to specific namespace for centralized config
-            # - --config-namespace=oauth2-proxy-system
+            # Required: namespace where the default ConfigMap lives
+            - --config-namespace=oauth2-proxy-system
+            # Optional: name of default ConfigMap (defaults to "oauth2-proxy-config")
+            # - --default-config=oauth2-proxy-config
           ports:
             - name: https
               containerPort: 8443

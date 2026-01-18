@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "oauth2-proxy-injector.fullname" . }}
+  labels:
+    {{- include "oauth2-proxy-injector.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - name: https
+      port: {{ .Values.service.port }}
+      targetPort: {{ .Values.webhook.port }}
+      protocol: TCP
+  selector:
+    {{- include "oauth2-proxy-injector.selectorLabels" . | nindent 4 }}

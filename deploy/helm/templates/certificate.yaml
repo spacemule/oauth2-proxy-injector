@@ -1,0 +1,28 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "oauth2-proxy-injector.fullname" . }}
+  labels:
+    {{- include "oauth2-proxy-injector.labels" . | nindent 4 }}
+spec:
+  secretName: {{ include "oauth2-proxy-injector.certificateSecretName" . }}
+  duration: {{ .Values.certificate.duration }}
+  renewBefore: {{ .Values.certificate.renewBefore }}
+  subject:
+    organizations:
+      - {{ include "oauth2-proxy-injector.fullname" . }}
+  isCA: false
+  privateKey:
+    algorithm: RSA
+    size: 2048
+  usages:
+    - server auth
+  dnsNames:
+    - {{ include "oauth2-proxy-injector.fullname" . }}
+    - {{ include "oauth2-proxy-injector.fullname" . }}.{{ .Release.Namespace }}
+    - {{ include "oauth2-proxy-injector.fullname" . }}.{{ .Release.Namespace }}.svc
+    - {{ include "oauth2-proxy-injector.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local
+  issuerRef:
+    name: {{ .Values.certificate.issuerRef.name }}
+    kind: {{ .Values.certificate.issuerRef.kind }}
+    group: {{ .Values.certificate.issuerRef.group }}

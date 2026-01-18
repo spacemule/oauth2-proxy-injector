@@ -1,0 +1,87 @@
+{{- if .Values.oauth2Proxy.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.config.defaultConfigMap }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "oauth2-proxy-injector.labels" . | nindent 4 }}
+    app.kubernetes.io/component: oauth2-proxy-config
+data:
+  # ===== Provider Settings =====
+  provider: {{ .Values.oauth2Proxy.provider | quote }}
+  {{- with .Values.oauth2Proxy.oidcIssuerUrl }}
+  oidc-issuer-url: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.oauth2Proxy.oidcGroupsClaim }}
+  oidc-groups-claim: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.oauth2Proxy.scope }}
+  scope: {{ . | quote }}
+  {{- end }}
+
+  # ===== Identity Settings =====
+  {{- with .Values.oauth2Proxy.clientId }}
+  client-id: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.oauth2Proxy.clientSecretRef }}
+  client-secret-ref: {{ . | quote }}
+  {{- end }}
+  {{- if .Values.oauth2Proxy.pkceEnabled }}
+  pkce-enabled: "true"
+  {{- end }}
+
+  # ===== Cookie Settings =====
+  {{- with .Values.oauth2Proxy.cookieSecretRef }}
+  cookie-secret-ref: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.oauth2Proxy.cookieDomains }}
+  cookie-domains: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.oauth2Proxy.cookieName }}
+  cookie-name: {{ . | quote }}
+  {{- end }}
+  cookie-secure: {{ .Values.oauth2Proxy.cookieSecure | quote }}
+
+  # ===== Authorization Settings =====
+  {{- with .Values.oauth2Proxy.emailDomains }}
+  email-domains: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.oauth2Proxy.allowedGroups }}
+  allowed-groups: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.oauth2Proxy.whitelistDomains }}
+  whitelist-domains: {{ . | quote }}
+  {{- end }}
+
+  # ===== Routing Settings =====
+  {{- with .Values.oauth2Proxy.redirectUrl }}
+  redirect-url: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.oauth2Proxy.extraJwtIssuers }}
+  extra-jwt-issuers: {{ . | quote }}
+  {{- end }}
+
+  # ===== Header/Token Passing Settings =====
+  {{- if .Values.oauth2Proxy.passAccessToken }}
+  pass-access-token: "true"
+  {{- end }}
+  {{- if .Values.oauth2Proxy.setXAuthRequest }}
+  set-xauthrequest: "true"
+  {{- end }}
+  {{- if .Values.oauth2Proxy.passAuthorizationHeader }}
+  pass-authorization-header: "true"
+  {{- end }}
+
+  # ===== Behavior Settings =====
+  {{- if .Values.oauth2Proxy.skipProviderButton }}
+  skip-provider-button: "true"
+  {{- end }}
+
+  # ===== Container Settings =====
+  proxy-image: {{ .Values.oauth2Proxy.proxyImage | quote }}
+  {{- with .Values.oauth2Proxy.extraArgs }}
+  extra-args: |
+    {{- . | nindent 4 }}
+  {{- end }}
+{{- end }}

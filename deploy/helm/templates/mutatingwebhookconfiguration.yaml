@@ -1,0 +1,30 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: {{ include "oauth2-proxy-injector.fullname" . }}
+  labels:
+    {{- include "oauth2-proxy-injector.labels" . | nindent 4 }}
+  annotations:
+    cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/{{ include "oauth2-proxy-injector.fullname" . }}
+webhooks:
+  - name: oauth2-proxy.{{ .Values.webhook.domain }}
+    clientConfig:
+      service:
+        name: {{ include "oauth2-proxy-injector.fullname" . }}
+        namespace: {{ .Release.Namespace }}
+        path: /mutate
+        port: {{ .Values.service.port }}
+      caBundle: ""
+    rules:
+      - operations: ["CREATE"]
+        apiGroups: [""]
+        apiVersions: ["v1"]
+        resources: ["pods"]
+        scope: Namespaced
+    namespaceSelector:
+      {{- toYaml .Values.namespaceSelector | nindent 6 }}
+    failurePolicy: {{ .Values.webhook.failurePolicy }}
+    reinvocationPolicy: IfNeeded
+    sideEffects: None
+    admissionReviewVersions: ["v1"]
+    timeoutSeconds: {{ .Values.webhook.timeoutSeconds }}

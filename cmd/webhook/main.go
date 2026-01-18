@@ -23,10 +23,11 @@ import (
 
 
 type cmdConfig struct {
-    port            int
-    certFile        string
-    keyFile         string
-    configNamespace string
+    port             int
+    certFile         string
+    keyFile          string
+    configNamespace  string
+    defaultConfigMap string
 }
 
 // main is the entrypoint for the webhook server
@@ -41,7 +42,7 @@ func main() {
 	loader := config.NewLoader(client, cfg.configNamespace)
 	builder := mutation.NewSidecarBuilder()
 	merger := config.NewMerger()
-	mutator := mutation.NewPodMutator(parser, loader, builder, merger)
+	mutator := mutation.NewPodMutator(parser, loader, builder, merger, cfg.defaultConfigMap, cfg.configNamespace)
 	handler := admission.NewHandler(mutator)
 	server, err := setupServer(handler, client, cfg.certFile, cfg.keyFile, cfg.port)
 	if err != nil {
@@ -66,13 +67,17 @@ func parseFlags() cmdConfig {
 	flag.StringVar(&c.certFile, "cert-file", "", "path to TLS certificate")
     flag.StringVar(&c.keyFile, "key-file", "", "path to TLS private key")
     flag.StringVar(&c.configNamespace, "config-namespace", "", "namespace for ConfigMaps")
-    
+	flag.StringVar(&c.defaultConfigMap, "config-map", "oauth2-proxy-config", "default configuration ConfigMap")
+
     flag.Parse()
-    
+
     if c.certFile == "" || c.keyFile == "" {
         klog.Fatal("--cert-file and --key-file are required")
     }
-    
+   if c.configNamespace == "" {
+		klog.Fatal("--config-namespace is required")
+   }
+
     return c
 }
 

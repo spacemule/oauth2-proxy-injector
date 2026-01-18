@@ -4,6 +4,7 @@ import (
 	"context"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"github.com/spacemule/oauth2-proxy-injector/internal/annotation"
 	"github.com/spacemule/oauth2-proxy-injector/internal/config"
@@ -23,33 +24,53 @@ type Mutator interface {
 }
 
 // PodMutator implements Mutator for oauth2-proxy sidecar injection
-//
-// TODO: Add config.Merger dependency for merging ConfigMap + annotation overrides
 type PodMutator struct {
-	annotationParser annotation.Parser
-	configLoader     config.Loader
-	sidecarBuilder   SidecarBuilder
-	configMerger	 config.Merger
+	annotationParser   annotation.Parser
+	configLoader       config.Loader
+	sidecarBuilder     SidecarBuilder
+	configMerger       config.Merger
+
+	// defaultConfigMap is the name of the default ConfigMap in the webhook's namespace
+	// Used when pods don't specify spacemule.net/oauth2-proxy.config annotation
+	defaultConfigMap   string
+
+	// defaultConfigNamespace is the namespace where the default ConfigMap lives
+	// Typically the webhook's own namespace
+	defaultConfigNamespace string
 }
 
 // NewPodMutator creates a new PodMutator with its dependencies
+//
+// Parameters:
+//   - parser: parses pod annotations into Config
+//   - loader: loads ProxyConfig from ConfigMaps
+//   - builder: builds the oauth2-proxy sidecar container
+//   - merger: merges ConfigMap settings with annotation overrides
+//   - defaultConfigMap: name of the default ConfigMap (e.g., "oauth2-proxy-config")
+//   - defaultConfigNamespace: namespace of the default ConfigMap (webhook's namespace)
 func NewPodMutator(
 	parser annotation.Parser,
 	loader config.Loader,
 	builder SidecarBuilder,
 	merger config.Merger,
+	defaultConfigMap string,
+	defaultConfigNamespace string,
 ) *PodMutator {
 	return &PodMutator{
-		annotationParser: parser,
-		configLoader: loader,
-		sidecarBuilder: builder,
-		configMerger: merger,
+		annotationParser:       parser,
+		configLoader:           loader,
+		sidecarBuilder:         builder,
+		configMerger:           merger,
+		defaultConfigMap:       defaultConfigMap,
+		defaultConfigNamespace: defaultConfigNamespace,
 	}
 }
 
 // Mutate inspects pod annotations and injects oauth2-proxy sidecar if enabled
 func (m *PodMutator) Mutate(ctx context.Context, pod *corev1.Pod) ([]PatchOperation, error) {
 	var ret []PatchOperation
+	var cm, cmNamespace string
+
 	annotationCfg, err := m.annotationParser.Parse(pod.Annotations)
 	if err != nil {
 		return nil, err
@@ -61,8 +82,16 @@ func (m *PodMutator) Mutate(ctx context.Context, pod *corev1.Pod) ([]PatchOperat
 	if isAlreadyInjected(pod) {
 		return ret, nil
 	}
+	
+	if annotationCfg.ConfigMapName == "" {
+		cm = m.defaultConfigMap
+		cmNamespace = m.defaultConfigNamespace
+	} else {
+		cm = annotationCfg.ConfigMapName
+		cmNamespace = pod.Namespace
+	}
 
-	proxyCfg, err := m.configLoader.Load(ctx, annotationCfg.ConfigMapName, pod.Namespace)
+	proxyCfg, err := m.configLoader.Load(ctx, cm, cmNamespace)
 	if err != nil {
 		return nil, err
 	}
@@ -92,6 +121,11 @@ func (m *PodMutator) Mutate(ctx context.Context, pod *corev1.Pod) ([]PatchOperat
 		patchBuilder.AddVolume(v)
 	}
 
+	rewrites := rewriteProbePortNames(pod, effectiveCfg.ProtectedPort, mapping.ProxyPort)
+	for _, rw := range rewrites {
+		patchBuilder.ReplaceProbePort(rw.ContainerIndex, rw.ProbeType, rw.HandlerType, rw.NewPort)
+	}
+
 	return patchBuilder.AddAnnotation(InjectedAnnotation, "true").Build(), nil
 }
 
@@ -119,6 +153,62 @@ func findProtectedPort(pod *corev1.Pod, portName string) (int, int, bool) {
 		}
 	}
 	return 0, 0, false
+}
+
+// rewriteProbePortNames finds all probes that reference the protected port name
+// and returns rewrite descriptors for them.
+//
+// When oauth2-proxy takes over a named port (e.g., "http"), any probes in the
+// original container that reference that port by name will break. This function
+// identifies those probes so they can be patched to use the numeric port instead.
+func rewriteProbePortNames(pod *corev1.Pod, protectedPortName string, originalPortNumber int32) []probeRewrite {
+	ret := []probeRewrite{}
+
+	for i, c := range pod.Spec.Containers {
+		if v := checkProbe(c.LivenessProbe, "livenessProbe", i, protectedPortName, originalPortNumber); v != nil {
+			ret = append(ret, *v)
+		}
+		if v := checkProbe(c.ReadinessProbe, "readinessProbe", i, protectedPortName, originalPortNumber); v != nil {
+			ret = append(ret, *v)
+		}
+		if v := checkProbe(c.StartupProbe, "startupProbe", i, protectedPortName, originalPortNumber); v != nil {
+			ret = append(ret, *v)
+		}
+	}
+	
+	return ret
+}
+
+// checkProbe checks if a probe references the protected port name and needs rewriting
+func checkProbe(probe *corev1.Probe, probeType string, containerIndex int, protectedPortName string, originalPortNumber int32) *probeRewrite {
+	if probe == nil {
+		return nil
+	}
+	if probe.HTTPGet != nil && probe.HTTPGet.Port.Type == intstr.String && probe.HTTPGet.Port.StrVal == protectedPortName {
+		return &probeRewrite{
+			ContainerIndex: containerIndex,
+			ProbeType: probeType,
+			HandlerType: "httpGet",
+			NewPort: originalPortNumber,
+		}
+	}
+	if probe.TCPSocket != nil && probe.TCPSocket.Port.Type == intstr.String && probe.TCPSocket.Port.StrVal == protectedPortName {
+		return &probeRewrite{
+			ContainerIndex: containerIndex,
+			ProbeType: probeType,
+			HandlerType: "tcpSocket",
+			NewPort: originalPortNumber,
+		}
+	}
+	return nil
+}
+
+// probeRewrite describes a probe port that needs to be rewritten from name to number
+type probeRewrite struct {
+	ContainerIndex int
+	ProbeType      string // "livenessProbe", "readinessProbe", "startupProbe"
+	HandlerType    string // "httpGet" or "tcpSocket"
+	NewPort        int32
 }
 
 // isAlreadyInjected checks if the pod already has an oauth2-proxy sidecar

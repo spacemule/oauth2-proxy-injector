@@ -1,6 +1,12 @@
-# Example oauth2-proxy ConfigMap
-# This ConfigMap contains the oauth2-proxy settings that will be applied
-# to pods with the annotation: spacemule.net/oauth2-proxy.config: "example-oauth2-config"
+# Default oauth2-proxy ConfigMap
+#
+# This is the DEFAULT ConfigMap that the webhook uses for all pods.
+# It should be deployed in the webhook's namespace (e.g., oauth2-proxy-system).
+#
+# Pods can:
+# 1. Use this default by NOT specifying spacemule.net/oauth2-proxy.config annotation
+# 2. Override with a different ConfigMap using: spacemule.net/oauth2-proxy.config: "other-config"
+# 3. Override individual settings via annotations (see example pod below)
 #
 # Many of these settings can be overridden per-pod via annotations.
 # See the example pod below for override annotations.
@@ -8,8 +14,10 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: example-oauth2-config
-  namespace: default  # Put this in the same namespace as your pods
+  # This name must match --default-config flag (defaults to "oauth2-proxy-config")
+  name: oauth2-proxy-config
+  # Deploy in the webhook's namespace (must match --config-namespace flag)
+  namespace: oauth2-proxy-system
   labels:
     app.kubernetes.io/component: oauth2-proxy-config
 data:
@@ -117,16 +125,17 @@ data:
   #   --reverse-proxy=true
 
 ---
-# Example Secret for oauth2-proxy credentials
+# Secret for oauth2-proxy credentials
+# Deploy in the webhook's namespace alongside the default ConfigMap
 # Create with actual secrets - don't commit real values!
-# kubectl create secret generic oauth2-secrets \
+# kubectl create secret generic oauth2-secrets -n oauth2-proxy-system \
 #   --from-literal=client-secret=your-actual-client-secret \
 #   --from-literal=cookie-secret=$(openssl rand -base64 32 | head -c 32)
 apiVersion: v1
 kind: Secret
 metadata:
   name: oauth2-secrets
-  namespace: default  # Same namespace as your ConfigMap and pods
+  namespace: oauth2-proxy-system  # Same namespace as the default ConfigMap
 type: Opaque
 stringData:
   client-secret: "REPLACE_WITH_REAL_CLIENT_SECRET"
@@ -142,9 +151,10 @@ metadata:
   name: example-protected-app
   namespace: default
   annotations:
-    # ===== Core (required) =====
+    # ===== Core =====
     spacemule.net/oauth2-proxy.enabled: "true"
-    spacemule.net/oauth2-proxy.config: "example-oauth2-config"  # references ConfigMap above
+    # Optional: override the default ConfigMap (omit to use webhook's default)
+    # spacemule.net/oauth2-proxy.config: "my-custom-config"
 
     # ===== Port/Routing (annotation-only) =====
     # Protected port name (default: "http")
