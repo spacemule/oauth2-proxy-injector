@@ -321,7 +321,7 @@ type EffectiveConfig struct {
 	// Upstream is an optional override for the auto-calculated upstream URL
 	// When empty, the sidecar builder calculates it from port mapping
 	// When set, it's used directly (e.g., "http://other-service:8080/api")
-	Upstreams []string
+	Upstream string
 
 	// ===== Container Settings (from ConfigMap only) =====
 	ExtraArgs      []string

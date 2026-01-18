@@ -175,11 +175,11 @@ const (
 
 	// ===== Upstream Override =====
 
-	// KeyUpstreams overrides the default upstream URL
-	// Value: comma separated URLs (e.g., "http://127.0.0.1:8080,http://other-service:80")
+	// KeyUpstream overrides the default upstream URL
+	// Value: full URL (e.g., "http://127.0.0.1:8080", "http://other-service:80")
 	// Use case: Route to different backend, external service, or specific path
 	// When set, this REPLACES the auto-calculated upstream from port mapping
-	KeyUpstreams = AnnotationPrefix + "upstreams"
+	KeyUpstream = AnnotationPrefix + "upstream"
 )
 
 
@@ -331,8 +331,7 @@ type ConfigOverrides struct {
 
 	// Upstream overrides the auto-calculated upstream URL
 	// When set, replaces the default http://127.0.0.1:<port> behavior
-	Upstreams []string
-	UpstreamsSet bool
+	Upstream *string
 }
 
 // Parser defines the interface for parsing pod annotations
@@ -389,6 +388,11 @@ func (p *AnnotationParser) Parse(annotations map[string]string) (*Config, error)
 	if v, ok := annotations[KeyProxyImage]; ok {
 		s := strings.TrimSpace(v)
 		cfg.Overrides.ProxyImage = &s
+	}
+
+	if v, ok := annotations[KeyUpstream]; ok {
+		s := strings.TrimSpace(v)
+		cfg.Overrides.Upstream = &s
 	}
 
 	if v, ok := annotations[KeyCookieSecure]; ok {
@@ -529,11 +533,6 @@ func (p *AnnotationParser) Parse(annotations map[string]string) (*Config, error)
 		cfg.Overrides.SkipProviderButton = b
 	}
 
-	if v, ok := annotations[KeyUpstreams]; ok {
-		cfg.Overrides.Upstreams = parsePaths(v)
-		cfg.Overrides.UpstreamsSet = true
-	}
-	
 	return cfg, nil
 }
 
