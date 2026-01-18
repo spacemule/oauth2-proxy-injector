@@ -81,21 +81,21 @@ func buildArgs(cfg *config.EffectiveConfig, portMapping PortMapping) []string {
 	ret = append(ret, "--client-id="+cfg.ClientID)
 	ret = append(ret, "--http-address=0.0.0.0:4180")
 
-	if cfg.Upstream != "" {
+	if cfg.Upstreams == nil {
 		switch cfg.UpstreamTLS {
 		case annotation.UpstreamNoTLS:
 			ret = append(ret, fmt.Sprintf("--upstream=http://127.0.0.1:%d", portMapping.ProxyPort))
-		case annotation.UpstreamTLSSecure:
+		case annotation.UpstreamTLSSecure, annotation.UpstreamTLSInsecure:
 			ret = append(ret, fmt.Sprintf("--upstream=https://127.0.0.1:%d", portMapping.ProxyPort))
-		case annotation.UpstreamTLSInsecure:
-			ret = append(ret, fmt.Sprintf("--upstream=https://127.0.0.1:%d", portMapping.ProxyPort))
-			ret = append(ret, "--ssl-upstream-insecure-skip-verify=true")
 		}
 	} else {
-		ret = append(ret, fmt.Sprintf("--upstream=%s", cfg.Upstream))
-		if cfg.UpstreamTLS == annotation.UpstreamTLSInsecure {
-			ret = append(ret, "--ssl-upstream-insecure-skip-verify=true")
+		for _, u := range cfg.Upstreams {
+			ret = append(ret, fmt.Sprintf("--upstream=%s", u))
 		}
+	}
+	
+	if cfg.UpstreamTLS == annotation.UpstreamTLSInsecure {
+		ret = append(ret, "--ssl-upstream-insecure-skip-verify=true")
 	}
 	
 	if !cfg.CookieSecure {

@@ -42,7 +42,6 @@ func (m *ConfigMerger) Merge(base *ProxyConfig, overrides *annotation.Config) (*
 	cfg.OIDCGroupsClaim = mergeString(base.OIDCGroupsClaim, overrides.Overrides.OIDCGroupsClaim)
 	cfg.CookieSecure = mergeBool(base.CookieSecure, overrides.Overrides.CookieSecure)
 	cfg.ProxyImage = mergeString(base.ProxyImage, overrides.Overrides.ProxyImage)
-	cfg.Upstream = mergeString("", overrides.Overrides.Upstream)
 	
 	cfg.ClientID = mergeString(base.ClientID, overrides.Overrides.ClientID)
 	cfg.Scope = mergeString(base.Scope, overrides.Overrides.Scope)
@@ -69,7 +68,9 @@ func (m *ConfigMerger) Merge(base *ProxyConfig, overrides *annotation.Config) (*
 	cfg.AllowedGroups = mergeStringSlice(base.AllowedGroups, overrides.Overrides.AllowedGroups, overrides.Overrides.AllowedGroupsSet)
 	// cfg.AllowedEmails = mergeStringSlice(base.AllowedEmails, overrides.Overrides.AllowedEmails, overrides.Overrides.AllowedEmailsSet)
 	cfg.ExtraJWTIssuers = mergeStringSlice(base.ExtraJWTIssuers, overrides.Overrides.ExtraJWTIssuers, overrides.Overrides.ExtraJWTIssuersSet)
+	cfg.Upstreams = mergeStringSlice([]string{}, overrides.Overrides.Upstreams, overrides.Overrides.UpstreamsSet)
 
+	
 	cfg.ProtectedPort = overrides.ProtectedPort
 	cfg.IgnorePaths = overrides.IgnorePaths
 	cfg.APIPaths = overrides.APIPaths
@@ -137,9 +138,11 @@ func (cfg *EffectiveConfig) Validate() error {
 			return fmt.Errorf("\nredirect-url invalid")
 		}
 	}
-	if cfg.Upstream != "" {
-		if _, err := url.Parse(cfg.RedirectURL); err != nil {
-			return fmt.Errorf("\nupstream invalid")
+	if cfg.Upstreams != nil {
+		for _, u := range cfg.Upstreams {
+			if _, err := url.Parse(u); err != nil {
+				return fmt.Errorf("\nupstream invalid")
+			}
 		}
 	}
 	if cfg.ExtraJWTIssuers != nil {
