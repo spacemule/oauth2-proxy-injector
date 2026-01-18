@@ -199,7 +199,7 @@ func (b *JSONPatchBuilder) ReplaceProbePort(containerIndex int, probeType, handl
 func (b *JSONPatchBuilder) ReplaceEnvVarValue(containerIndex, envIndex int, newValue string) PatchBuilder {
 	b.operations = append(b.operations, PatchOperation{
 		Op: "replace",
-		Path: fmt.Sprintf("/spec/containers/%s/env/%s/value", containerIndex, envIndex),
+		Path: fmt.Sprintf("/spec/containers/%d/env/%d/value", containerIndex, envIndex),
 		Value: newValue,
 	})
 
