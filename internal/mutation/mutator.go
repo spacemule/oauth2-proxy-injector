@@ -117,7 +117,7 @@ func (m *PodMutator) Mutate(ctx context.Context, pod *corev1.Pod) ([]PatchOperat
 	patchBuilder := NewPatchBuilder(hasExistingAnnotations(pod), hasExistingLabels(pod), hasExistingVolumes(pod))
 	patchBuilder.AddContainer(container)
 
-	if !annotation.IsNamedPort(effectiveCfg.ProtectedPort) {
+	if annotation.IsNamedPort(effectiveCfg.ProtectedPort) {
 		i, j, remove := findProtectedPort(pod, effectiveCfg.ProtectedPort)
 		if remove {
 			patchBuilder.RemovePort(i, j)
