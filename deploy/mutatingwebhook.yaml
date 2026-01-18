@@ -51,3 +51,40 @@ webhooks:
     admissionReviewVersions: ["v1"]
     # Timeout for webhook calls
     timeoutSeconds: 10
+
+  # Service mutation webhook - rewrites targetPort for multi-port scenarios
+  - name: oauth2-proxy-service.spacemule.net
+    clientConfig:
+      service:
+        name: oauth2-proxy-webhook
+        namespace: oauth2-proxy-system
+        path: /mutate-service
+        port: 443
+      caBundle: ""
+    rules:
+      # Intercept Service CREATE and UPDATE operations
+      - operations: ["CREATE", "UPDATE"]
+        apiGroups: [""]
+        apiVersions: ["v1"]
+        resources: ["services"]
+        scope: Namespaced
+    # Only mutate Services in namespaces with the label
+    namespaceSelector:
+      matchExpressions:
+        - key: oauth2-proxy-injection
+          operator: In
+          values: ["enabled"]
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values:
+            - kube-system
+            - kube-public
+            - kube-node-lease
+            - oauth2-proxy-system
+    # Fail open for Services - less critical than pod injection
+    # TODO: Consider changing to Fail once stable
+    failurePolicy: Ignore
+    reinvocationPolicy: IfNeeded
+    sideEffects: None
+    admissionReviewVersions: ["v1"]
+    timeoutSeconds: 10

@@ -19,6 +19,7 @@ import (
 	"github.com/spacemule/oauth2-proxy-injector/internal/annotation"
 	"github.com/spacemule/oauth2-proxy-injector/internal/config"
 	"github.com/spacemule/oauth2-proxy-injector/internal/mutation"
+	// "github.com/spacemule/oauth2-proxy-injector/internal/service"
 )
 
 
@@ -67,16 +68,13 @@ func parseFlags() cmdConfig {
 	flag.StringVar(&c.certFile, "cert-file", "", "path to TLS certificate")
     flag.StringVar(&c.keyFile, "key-file", "", "path to TLS private key")
     flag.StringVar(&c.configNamespace, "config-namespace", "", "namespace for ConfigMaps")
-	flag.StringVar(&c.defaultConfigMap, "default-config", "oauth2-proxy-config", "default configuration ConfigMap")
+	flag.StringVar(&c.defaultConfigMap, "default-config", "", "default configuration ConfigMap (optional)")
 
     flag.Parse()
 
     if c.certFile == "" || c.keyFile == "" {
         klog.Fatal("--cert-file and --key-file are required")
     }
-   if c.configNamespace == "" {
-		klog.Fatal("--config-namespace is required")
-   }
 
     return c
 }

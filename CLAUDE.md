@@ -38,6 +38,7 @@ metadata:
     # === Port/Routing (annotation-only) ===
     spacemule.net/oauth2-proxy.protected-port: "http"  # port NAME to protect (default: "http")
     spacemule.net/oauth2-proxy.upstream-tls: "http"  # "http" (default), "https", or "https-insecure"
+    spacemule.net/oauth2-proxy.upstream: "http://127.0.0.1:8080"  # override auto-calculated upstream
     spacemule.net/oauth2-proxy.ignore-paths: "/health,/metrics"  # paths to skip auth
     spacemule.net/oauth2-proxy.api-paths: "/api/"  # paths requiring JWT only (no login redirect)
     spacemule.net/oauth2-proxy.skip-jwt-bearer-tokens: "true"  # skip login when JWT provided
@@ -64,15 +65,34 @@ metadata:
 
     # Behavior overrides
     spacemule.net/oauth2-proxy.skip-provider-button: "true"
+
+    # Provider overrides (rarely needed - usually namespace-wide)
+    spacemule.net/oauth2-proxy.provider: "oidc"  # override provider type
+    spacemule.net/oauth2-proxy.oidc-issuer-url: "https://other-realm.example.com"
+    spacemule.net/oauth2-proxy.oidc-groups-claim: "roles"  # different claim name
+    spacemule.net/oauth2-proxy.cookie-secure: "false"  # for dev/testing only
+
+    # Container overrides
+    spacemule.net/oauth2-proxy.proxy-image: "quay.io/oauth2-proxy/oauth2-proxy:v7.6.0"
 ```
 
-### Single Port Protection
+### Port Protection Modes
 
-The webhook protects a single **named** port per pod:
-- Protected port must have a name (e.g., `name: http`)
-- oauth2-proxy takes over that named port
+The webhook supports two modes based on how `protected-port` is specified:
+
+**Named Port (e.g., `protected-port: "http"`)** - Takeover mode:
+- oauth2-proxy takes over the named port from the app container
+- App container's port is removed
 - Services using `targetPort: <name>` automatically route to the proxy
-- Default protected port name is "http"
+- Probes referencing the port name are rewritten to use numeric port
+- Default: `"http"`
+
+**Numbered Port (e.g., `protected-port: "8080"`)** - Service mutation mode:
+- App container keeps all its ports unchanged
+- oauth2-proxy sidecar gets a generic port name (`oauth2-proxy`)
+- Probes are NOT rewritten (they still point at app container)
+- Use with Service webhook to rewrite `targetPort` values
+- Use `upstream` annotation to specify which backend port to proxy
 
 ### ConfigMap-Based Proxy Settings
 
@@ -248,21 +268,45 @@ The design supports a "one ConfigMap per namespace, override per service" patter
 
 | Category | ConfigMap Only | Both (CM + Annotation Override) |
 |----------|---------------|--------------------------------|
-| **Provider** | provider, oidc-issuer-url, oidc-groups-claim, scope | - |
+| **Provider** | - | provider, oidc-issuer-url, oidc-groups-claim, scope |
 | **Identity** | - | client-id, client-secret-ref, pkce-enabled |
-| **Cookies** | cookie-secure | cookie-secret-ref, cookie-domains |
-| **Authorization** | whitelist-domains | email-domains, allowed-groups, allowed-emails |
+| **Cookies** | - | cookie-secure, cookie-secret-ref, cookie-domains, cookie-name |
+| **Authorization** | - | whitelist-domains, email-domains, allowed-groups, allowed-emails |
 | **Routing** | - | redirect-url, extra-jwt-issuers |
 | **Headers** | - | pass-access-token, set-xauthrequest, pass-authorization-header |
-| **Behavior** | extra-args, proxy-image | skip-provider-button |
+| **Behavior** | extra-args | skip-provider-button, proxy-image |
 
-Annotation-only fields: protected-port, upstream-tls, ignore-paths, api-paths, skip-jwt-bearer-tokens
+Annotation-only fields: protected-port, upstream-tls, ignore-paths, api-paths, skip-jwt-bearer-tokens, **upstream**
 
 ### Override Semantics
 
 - **Pointer fields** (`*string`, `*bool`): `nil` = use ConfigMap value; non-nil = override
 - **Slice fields with Set flag**: `Set=false` = use ConfigMap; `Set=true` = use annotation (even if empty)
 - This allows explicitly setting "no groups allowed" vs "use default groups"
+
+### Annotation-Only Mode
+
+ConfigMaps are **optional**. You can configure everything via annotations:
+
+```yaml
+metadata:
+  annotations:
+    spacemule.net/oauth2-proxy.enabled: "true"
+    # No config annotation = no ConfigMap required
+
+    # Required fields (must be provided via annotation if no ConfigMap):
+    spacemule.net/oauth2-proxy.provider: "oidc"
+    spacemule.net/oauth2-proxy.oidc-issuer-url: "https://auth.example.com/realms/myrealm"
+    spacemule.net/oauth2-proxy.client-id: "my-client"
+    spacemule.net/oauth2-proxy.cookie-secret-ref: "my-secrets:cookie-secret"
+    # Either client-secret-ref OR pkce-enabled required:
+    spacemule.net/oauth2-proxy.pkce-enabled: "true"
+```
+
+Use cases:
+- Simple single-service deployments
+- Testing/development without shared ConfigMaps
+- Services that need completely custom config
 
 ## TODO
 
@@ -275,7 +319,77 @@ Annotation-only fields: protected-port, upstream-tls, ignore-paths, api-paths, s
 - Update `internal/mutation/sidecar.go` to use EffectiveConfig (see TODOs in file)
 - Update `internal/mutation/mutator.go` to integrate config merging (see TODOs in file)
 - Update `cmd/webhook/main.go` to wire up Merger (see TODOs in file)
+- Implement annotation-only mode (no ConfigMap required) - see TODOs in mutator.go, types.go, main.go
+- Parse new annotation overrides in parser.go (provider, oidc-issuer-url, etc.) - see TODO in parser.go
+- Merge new override fields in merge.go - see TODO in merge.go
+- Handle upstream override in sidecar.go buildArgs() - see TODO in sidecar.go
+- Implement named vs numbered port behavior in mutator.go and sidecar.go - see TODOs in files
+- Implement Service mutator - see TODOs in internal/service/*.go
 
-## Future Projects
+## Service Mutating Webhook
 
-- **Service Mutating Webhook**: Create a separate webhook that mutates Services to redirect traffic through oauth2-proxy. Currently, this webhook requires protected ports to be **named** so that Services using `targetPort: <name>` automatically route to the proxy (since the webhook moves the named port from the app container to the sidecar). A Service webhook would handle unnamed ports by rewriting `targetPort` values directly.
+For multi-port scenarios (e.g., MediaMTX with HLS + WebRTC), the Service webhook rewrites `targetPort` values to route through oauth2-proxy.
+
+### How It Works
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         Pod                                      │
+│  ┌─────────────────┐    ┌─────────────────┐                      │
+│  │   App Container │    │  oauth2-proxy   │                      │
+│  │   port: 8080    │◄───│  port: 4180     │◄── Service routes    │
+│  │   port: 8554    │    │  upstream:8080  │    here via rewrite  │
+│  └─────────────────┘    └─────────────────┘                      │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Service Annotations
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    # List ports to route through oauth2-proxy (comma-separated)
+    spacemule.net/oauth2-proxy.rewrite-ports: "http,hls"
+    # Or by number for unnamed ports:
+    spacemule.net/oauth2-proxy.rewrite-ports: "8080,8554"
+    # Optional: override proxy port (default: 4180)
+    spacemule.net/oauth2-proxy.proxy-port: "4180"
+spec:
+  ports:
+    - name: http
+      port: 80
+      targetPort: http    # Webhook rewrites to 4180
+    - name: hls
+      port: 8888
+      targetPort: 8554    # Webhook rewrites to 4180
+```
+
+### MediaMTX Example
+
+For MediaMTX with HLS on port 8888 and the main API on 8889:
+
+**Pod annotations:**
+```yaml
+spacemule.net/oauth2-proxy.enabled: "true"
+spacemule.net/oauth2-proxy.upstream: "http://127.0.0.1:8888"  # Route to HLS port
+```
+
+**Service annotations:**
+```yaml
+spacemule.net/oauth2-proxy.rewrite-ports: "hls"  # Only rewrite HLS port
+```
+
+This way, HLS traffic goes through oauth2-proxy, while other ports remain direct.
+
+### Files
+
+- `internal/service/mutator.go` - Service mutation logic
+- `internal/service/handler.go` - Admission webhook handler
+- `deploy/mutatingwebhook.yaml` - Includes Service webhook config
+
+### Endpoints
+
+- `/mutate` or `/mutate-pod` - Pod mutation (existing)
+- `/mutate-service` - Service mutation (new)

@@ -37,10 +37,12 @@ func NewSidecarBuilder() *OAuth2ProxySidecarBuilder {
 }
 
 // Build creates an oauth2-proxy sidecar container and associated volumes
-func (b *OAuth2ProxySidecarBuilder) Build(
-	cfg *config.EffectiveConfig,
-	portMapping PortMapping,
-) (*corev1.Container, []corev1.Volume) {
+func (b *OAuth2ProxySidecarBuilder) Build(cfg *config.EffectiveConfig, portMapping PortMapping) (*corev1.Container, []corev1.Volume) {
+	portName := cfg.ProtectedPort
+	if !annotation.IsNamedPort(portName) {
+		portName = "oauth2-proxy"
+	}
+	
 	container := &corev1.Container{
 		Name: "oauth2-proxy",
 		Image: cfg.ProxyImage,
@@ -48,7 +50,7 @@ func (b *OAuth2ProxySidecarBuilder) Build(
 		Env: buildEnvVars(cfg),
 		Ports: []corev1.ContainerPort{
 			corev1.ContainerPort{
-				Name: cfg.ProtectedPort,
+				Name: portName,
 				ContainerPort: 4180,
 				HostPort: portMapping.HostPort,
 				Protocol: corev1.ProtocolTCP,
@@ -79,16 +81,23 @@ func buildArgs(cfg *config.EffectiveConfig, portMapping PortMapping) []string {
 	ret = append(ret, "--client-id="+cfg.ClientID)
 	ret = append(ret, "--http-address=0.0.0.0:4180")
 
-	switch cfg.UpstreamTLS {
-	case annotation.UpstreamNoTLS:
-		ret = append(ret, fmt.Sprintf("--upstream=http://127.0.0.1:%d", portMapping.ProxyPort))
-	case annotation.UpstreamTLSSecure:
-		ret = append(ret, fmt.Sprintf("--upstream=https://127.0.0.1:%d", portMapping.ProxyPort))
-	case annotation.UpstreamTLSInsecure:
-		ret = append(ret, fmt.Sprintf("--upstream=https://127.0.0.1:%d", portMapping.ProxyPort))
-		ret = append(ret, "--ssl-upstream-insecure-skip-verify=true")
+	if cfg.Upstream != "" {
+		switch cfg.UpstreamTLS {
+		case annotation.UpstreamNoTLS:
+			ret = append(ret, fmt.Sprintf("--upstream=http://127.0.0.1:%d", portMapping.ProxyPort))
+		case annotation.UpstreamTLSSecure:
+			ret = append(ret, fmt.Sprintf("--upstream=https://127.0.0.1:%d", portMapping.ProxyPort))
+		case annotation.UpstreamTLSInsecure:
+			ret = append(ret, fmt.Sprintf("--upstream=https://127.0.0.1:%d", portMapping.ProxyPort))
+			ret = append(ret, "--ssl-upstream-insecure-skip-verify=true")
+		}
+	} else {
+		ret = append(ret, fmt.Sprintf("--upstream=%s", cfg.Upstream))
+		if cfg.UpstreamTLS == annotation.UpstreamTLSInsecure {
+			ret = append(ret, "--ssl-upstream-insecure-skip-verify=true")
+		}
 	}
-
+	
 	if !cfg.CookieSecure {
 		ret = append(ret, "--cookie-secure=false")  // default is true
 	}

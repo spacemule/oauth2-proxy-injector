@@ -33,14 +33,16 @@ func (m *ConfigMerger) Merge(base *ProxyConfig, overrides *annotation.Config) (*
 	cfg := &EffectiveConfig{
 		ConfigMapName: base.Name,
 		ConfigMapNamespace: base.Namespace,
-		Provider: base.Provider,
-		OIDCIssuerURL: base.OIDCIssuerURL,
-		OIDCGroupsClaim: base.OIDCGroupsClaim,
-		CookieSecure: base.CookieSecure,
-		ProxyImage: base.ProxyImage,
 		ProxyResources: base.ProxyResources,
 		ExtraArgs: base.ExtraArgs,
 	}
+
+	cfg.Provider = mergeString(base.Provider, overrides.Overrides.Provider)
+	cfg.OIDCIssuerURL = mergeString(base.OIDCIssuerURL, overrides.Overrides.OIDCIssuerURL)
+	cfg.OIDCGroupsClaim = mergeString(base.OIDCGroupsClaim, overrides.Overrides.OIDCGroupsClaim)
+	cfg.CookieSecure = mergeBool(base.CookieSecure, overrides.Overrides.CookieSecure)
+	cfg.ProxyImage = mergeString(base.ProxyImage, overrides.Overrides.ProxyImage)
+	cfg.Upstream = mergeString("", overrides.Overrides.Upstream)
 	
 	cfg.ClientID = mergeString(base.ClientID, overrides.Overrides.ClientID)
 	cfg.Scope = mergeString(base.Scope, overrides.Overrides.Scope)
@@ -133,6 +135,11 @@ func (cfg *EffectiveConfig) Validate() error {
 	if cfg.RedirectURL != "" {
 		if _, err := url.Parse(cfg.RedirectURL); err != nil {
 			return fmt.Errorf("\nredirect-url invalid")
+		}
+	}
+	if cfg.Upstream != "" {
+		if _, err := url.Parse(cfg.RedirectURL); err != nil {
+			return fmt.Errorf("\nupstream invalid")
 		}
 	}
 	if cfg.ExtraJWTIssuers != nil {

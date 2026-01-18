@@ -142,6 +142,44 @@ const (
 	// KeySkipProviderButton overrides skip-provider-button from ConfigMap
 	// Value: "true" or "false"
 	KeySkipProviderButton = AnnotationPrefix + "skip-provider-button"
+
+	// ===== Provider Overrides (rarely needed, but available) =====
+
+	// KeyProvider overrides the OAuth2 provider from ConfigMap
+	// Value: "oidc", "google", "github", etc.
+	// Use case: Testing with different provider, multi-tenant setups
+	KeyProvider = AnnotationPrefix + "provider"
+
+	// KeyOIDCIssuerURL overrides the OIDC issuer URL from ConfigMap
+	// Value: full URL (e.g., "https://auth.example.com/realms/myrealm")
+	// Use case: Per-service realm in multi-tenant Keycloak
+	KeyOIDCIssuerURL = AnnotationPrefix + "oidc-issuer-url"
+
+	// KeyOIDCGroupsClaim overrides the groups claim name from ConfigMap
+	// Value: claim name (e.g., "groups", "roles")
+	KeyOIDCGroupsClaim = AnnotationPrefix + "oidc-groups-claim"
+
+	// ===== Cookie Overrides =====
+
+	// KeyCookieSecure overrides the cookie secure flag from ConfigMap
+	// Value: "true" or "false"
+	// Use case: Development/testing without HTTPS
+	KeyCookieSecure = AnnotationPrefix + "cookie-secure"
+
+	// ===== Container Overrides =====
+
+	// KeyProxyImage overrides the oauth2-proxy image from ConfigMap
+	// Value: full image reference (e.g., "quay.io/oauth2-proxy/oauth2-proxy:v7.6.0")
+	// Use case: Testing new versions, using custom builds
+	KeyProxyImage = AnnotationPrefix + "proxy-image"
+
+	// ===== Upstream Override =====
+
+	// KeyUpstream overrides the default upstream URL
+	// Value: full URL (e.g., "http://127.0.0.1:8080", "http://other-service:80")
+	// Use case: Route to different backend, external service, or specific path
+	// When set, this REPLACES the auto-calculated upstream from port mapping
+	KeyUpstream = AnnotationPrefix + "upstream"
 )
 
 
@@ -267,6 +305,33 @@ type ConfigOverrides struct {
 
 	// SkipProviderButton overrides skip-provider-button
 	SkipProviderButton *bool
+
+	// ===== Provider Overrides (rarely needed) =====
+
+	// Provider overrides the OAuth2 provider type
+	Provider *string
+
+	// OIDCIssuerURL overrides the OIDC issuer URL
+	OIDCIssuerURL *string
+
+	// OIDCGroupsClaim overrides the OIDC groups claim name
+	OIDCGroupsClaim *string
+
+	// ===== Cookie Overrides =====
+
+	// CookieSecure overrides the cookie secure flag
+	CookieSecure *bool
+
+	// ===== Container Overrides =====
+
+	// ProxyImage overrides the oauth2-proxy container image
+	ProxyImage *string
+
+	// ===== Upstream Override =====
+
+	// Upstream overrides the auto-calculated upstream URL
+	// When set, replaces the default http://127.0.0.1:<port> behavior
+	Upstream *string
 }
 
 // Parser defines the interface for parsing pod annotations
@@ -303,6 +368,39 @@ func (p *AnnotationParser) Parse(annotations map[string]string) (*Config, error)
 	// ConfigMapName is optional - if not set, mutator will use webhook's default
 	if v, ok := annotations[KeyConfig]; ok {
 		cfg.ConfigMapName = v
+	}
+
+	if v, ok := annotations[KeyProvider]; ok {
+		s := strings.TrimSpace(v)
+		cfg.Overrides.Provider = &s
+	}
+
+	if v, ok := annotations[KeyOIDCIssuerURL]; ok {
+		s := strings.TrimSpace(v)
+		cfg.Overrides.OIDCIssuerURL = &s
+	}
+
+	if v, ok := annotations[KeyOIDCGroupsClaim]; ok {
+		s := strings.TrimSpace(v)
+		cfg.Overrides.OIDCGroupsClaim = &s
+	}
+
+	if v, ok := annotations[KeyProxyImage]; ok {
+		s := strings.TrimSpace(v)
+		cfg.Overrides.ProxyImage = &s
+	}
+
+	if v, ok := annotations[KeyUpstream]; ok {
+		s := strings.TrimSpace(v)
+		cfg.Overrides.Upstream = &s
+	}
+
+	if v, ok := annotations[KeyCookieSecure]; ok {
+		b, err := parseBoolPtr(v)
+		if err != nil{
+			return nil, err
+		}
+		cfg.Overrides.CookieSecure = b
 	}
 
 	if v, ok := annotations[KeyProtectedPort];ok {
@@ -434,7 +532,7 @@ func (p *AnnotationParser) Parse(annotations map[string]string) (*Config, error)
 		}
 		cfg.Overrides.SkipProviderButton = b
 	}
-	
+
 	return cfg, nil
 }
 
@@ -464,4 +562,19 @@ func parsePaths(pathsStr string) ([]string) {
 		result = append(result, strings.TrimSpace(path))
 	}
 	return result
+}
+
+// IsNamedPort returns true if the protected port is specified by name (e.g., "http")
+// rather than by number (e.g., "8080").
+//
+// This distinction matters for mutation behavior:
+// - Named port: "takeover" mode - sidecar takes the port name, app port is removed, probes rewritten
+// - Numbered port: "service mutation" mode - app keeps its ports, sidecar gets generic port, Service webhook handles routing
+func IsNamedPort(protectedPort string) bool {
+	for _, c := range protectedPort {
+		if c < '0' || c > '9' {
+			return true
+		}
+	}
+	return false
 }

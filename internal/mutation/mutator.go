@@ -70,6 +70,7 @@ func NewPodMutator(
 func (m *PodMutator) Mutate(ctx context.Context, pod *corev1.Pod) ([]PatchOperation, error) {
 	var ret []PatchOperation
 	var cm, cmNamespace string
+	var proxyCfg *config.ProxyConfig
 
 	annotationCfg, err := m.annotationParser.Parse(pod.Annotations)
 	if err != nil {
@@ -83,19 +84,23 @@ func (m *PodMutator) Mutate(ctx context.Context, pod *corev1.Pod) ([]PatchOperat
 		return ret, nil
 	}
 	
-	if annotationCfg.ConfigMapName == "" {
-		cm = m.defaultConfigMap
-		cmNamespace = m.defaultConfigNamespace
-	} else {
+	if annotationCfg.ConfigMapName != "" {
 		cm = annotationCfg.ConfigMapName
 		cmNamespace = pod.Namespace
+	} else if m.defaultConfigMap != "" {
+		cm = m.defaultConfigMap
+		cmNamespace = m.defaultConfigNamespace
 	}
-
-	proxyCfg, err := m.configLoader.Load(ctx, cm, cmNamespace)
-	if err != nil {
-		return nil, err
+	
+	if cm != "" {
+		proxyCfg, err = m.configLoader.Load(ctx, cm, cmNamespace)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		proxyCfg = config.NewEmptyProxyConfig()
 	}
-
+	
 	effectiveCfg, err := m.configMerger.Merge(proxyCfg, annotationCfg)
 	if err != nil {
 		 return nil, err
@@ -112,18 +117,19 @@ func (m *PodMutator) Mutate(ctx context.Context, pod *corev1.Pod) ([]PatchOperat
 	patchBuilder := NewPatchBuilder(hasExistingAnnotations(pod), hasExistingLabels(pod), hasExistingVolumes(pod))
 	patchBuilder.AddContainer(container)
 
-	i, j, remove := findProtectedPort(pod, effectiveCfg.ProtectedPort)
-	if remove {
-		patchBuilder.RemovePort(i, j)
+	if !annotation.IsNamedPort(effectiveCfg.ProtectedPort) {
+		i, j, remove := findProtectedPort(pod, effectiveCfg.ProtectedPort)
+		if remove {
+			patchBuilder.RemovePort(i, j)
+		}
+		rewrites := rewriteProbePortNames(pod, effectiveCfg.ProtectedPort, mapping.ProxyPort)
+		for _, rw := range rewrites {
+			patchBuilder.ReplaceProbePort(rw.ContainerIndex, rw.ProbeType, rw.HandlerType, rw.NewPort)
+		}
 	}
 
 	for _, v := range volumes {
 		patchBuilder.AddVolume(v)
-	}
-
-	rewrites := rewriteProbePortNames(pod, effectiveCfg.ProtectedPort, mapping.ProxyPort)
-	for _, rw := range rewrites {
-		patchBuilder.ReplaceProbePort(rw.ContainerIndex, rw.ProbeType, rw.HandlerType, rw.NewPort)
 	}
 
 	return patchBuilder.AddAnnotation(InjectedAnnotation, "true").Build(), nil

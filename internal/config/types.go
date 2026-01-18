@@ -255,7 +255,16 @@ const (
 )
 
 // DefaultProxyImage is the default oauth2-proxy container image
-const DefaultProxyImage = "quay.io/oauth2-proxy/oauth2-proxy:v7.5.1"
+const DefaultProxyImage = "quay.io/oauth2-proxy/oauth2-proxy:v7.14.2"
+
+// NewEmptyProxyConfig creates an empty ProxyConfig with sensible defaults
+// Used for annotation-only mode where no ConfigMap is specified
+func NewEmptyProxyConfig() *ProxyConfig {
+	return &ProxyConfig{
+		ProxyImage: DefaultProxyImage,
+		CookieSecure: true,
+	}
+}
 
 // EffectiveConfig represents the final, merged configuration after applying
 // pod annotation overrides to the base ConfigMap settings.
@@ -308,6 +317,11 @@ type EffectiveConfig struct {
 	APIPaths            []string
 	SkipJWTBearerTokens bool
 	UpstreamTLS         annotation.UpstreamTLSMode // "http", "https", "https-insecure"
+
+	// Upstream is an optional override for the auto-calculated upstream URL
+	// When empty, the sidecar builder calculates it from port mapping
+	// When set, it's used directly (e.g., "http://other-service:8080/api")
+	Upstream string
 
 	// ===== Container Settings (from ConfigMap only) =====
 	ExtraArgs      []string
