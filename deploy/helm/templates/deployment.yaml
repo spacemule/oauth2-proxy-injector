@@ -39,7 +39,7 @@ spec:
             - --cert-file=/certs/tls.crt
             - --key-file=/certs/tls.key
             - --config-namespace={{ .Values.config.configNamespace | default .Release.Namespace }}
-            - --default-config={{ .Values.config.defaultConfigMap }}
+            - --config-map={{ .Values.config.defaultConfigMap }}
           ports:
             - name: https
               containerPort: {{ .Values.webhook.port }}
