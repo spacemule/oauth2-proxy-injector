@@ -137,11 +137,11 @@ func (cfg *EffectiveConfig) Validate() error {
 			return fmt.Errorf("\nredirect-url invalid")
 		}
 	}
-	if cfg.Upstream != "" {
-		if _, err := url.Parse(cfg.RedirectURL); err != nil {
-			return fmt.Errorf("\nupstream invalid")
-		}
-	}
+	// if cfg.Upstream != "" {
+	// 	if _, err := url.Parse(cfg.RedirectURL); err != nil {
+	// 		return fmt.Errorf("\nupstream invalid")
+	// 	}
+	// }
 	if cfg.ExtraJWTIssuers != nil {
 		for _, v := range cfg.ExtraJWTIssuers {
 			parts := strings.Split(v, "=")
