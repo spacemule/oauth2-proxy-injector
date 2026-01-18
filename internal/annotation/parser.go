@@ -300,12 +300,9 @@ func (p *AnnotationParser) Parse(annotations map[string]string) (*Config, error)
 	}
 	cfg.Enabled = true
 
-	// TODO: ConfigMapName is now optional - if not set, mutator will use webhook's default
-	// Currently still required - change this to be optional
+	// ConfigMapName is optional - if not set, mutator will use webhook's default
 	if v, ok := annotations[KeyConfig]; ok {
 		cfg.ConfigMapName = v
-	} else {
-		return nil, fmt.Errorf("required annotation %s not found", KeyConfig)
 	}
 
 	if v, ok := annotations[KeyProtectedPort];ok {
