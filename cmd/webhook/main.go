@@ -67,7 +67,7 @@ func parseFlags() cmdConfig {
 	flag.StringVar(&c.certFile, "cert-file", "", "path to TLS certificate")
     flag.StringVar(&c.keyFile, "key-file", "", "path to TLS private key")
     flag.StringVar(&c.configNamespace, "config-namespace", "", "namespace for ConfigMaps")
-	flag.StringVar(&c.defaultConfigMap, "config-map", "oauth2-proxy-config", "default configuration ConfigMap")
+	flag.StringVar(&c.defaultConfigMap, "default-config", "oauth2-proxy-config", "default configuration ConfigMap")
 
     flag.Parse()
 
