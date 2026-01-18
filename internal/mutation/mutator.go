@@ -2,6 +2,7 @@ package mutation
 
 import (
 	"context"
+	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -29,6 +30,7 @@ type PodMutator struct {
 	configLoader       config.Loader
 	sidecarBuilder     SidecarBuilder
 	configMerger       config.Merger
+	knativeDetector    KnativeDetector
 
 	// defaultConfigMap is the name of the default ConfigMap in the webhook's namespace
 	// Used when pods don't specify spacemule.net/oauth2-proxy.config annotation
@@ -46,6 +48,7 @@ type PodMutator struct {
 //   - loader: loads ProxyConfig from ConfigMaps
 //   - builder: builds the oauth2-proxy sidecar container
 //   - merger: merges ConfigMap settings with annotation overrides
+//   - knativeDetector: detects Knative pods and locates queue-proxy
 //   - defaultConfigMap: name of the default ConfigMap (e.g., "oauth2-proxy-config")
 //   - defaultConfigNamespace: namespace of the default ConfigMap (webhook's namespace)
 func NewPodMutator(
@@ -53,6 +56,7 @@ func NewPodMutator(
 	loader config.Loader,
 	builder SidecarBuilder,
 	merger config.Merger,
+	knativeDetector KnativeDetector,
 	defaultConfigMap string,
 	defaultConfigNamespace string,
 ) *PodMutator {
@@ -61,6 +65,7 @@ func NewPodMutator(
 		configLoader:           loader,
 		sidecarBuilder:         builder,
 		configMerger:           merger,
+		knativeDetector:        knativeDetector,
 		defaultConfigMap:       defaultConfigMap,
 		defaultConfigNamespace: defaultConfigNamespace,
 	}
@@ -132,7 +137,31 @@ func (m *PodMutator) Mutate(ctx context.Context, pod *corev1.Pod) ([]PatchOperat
 		patchBuilder.AddVolume(v)
 	}
 
+	// Handle Knative: redirect queue-proxy's USER_PORT to oauth2-proxy
+	if err := m.patchKnativeQueueProxy(pod, patchBuilder); err != nil {
+		return nil, err
+	}
+
 	return patchBuilder.AddAnnotation(InjectedAnnotation, "true").Build(), nil
+}
+
+// patchKnativeQueueProxy patches queue-proxy's USER_PORT env var to point to oauth2-proxy
+// This is a no-op for non-Knative pods
+func (m *PodMutator) patchKnativeQueueProxy(pod *corev1.Pod, patchBuilder *JSONPatchBuilder) error {
+	if !m.knativeDetector.IsKnativePod(pod) {
+		return nil
+	}
+	c, b := m.knativeDetector.FindQueueProxyIndex(pod)
+	if !b {
+		return fmt.Errorf("unexpected state: queue-proxy pod not found")
+	}
+	i := FindUserPortEnvIndex(pod, c)
+	if i == -1 {
+		return fmt.Errorf("unexpected state: USER_PORT env not found")
+	}
+	patchBuilder.ReplaceEnvVarValue(c, i, "4180")
+	
+	return nil
 }
 
 // collectContainerPorts gathers all ports from all containers in the pod

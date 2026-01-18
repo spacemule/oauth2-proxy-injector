@@ -43,7 +43,8 @@ func main() {
 	loader := config.NewLoader(client, cfg.configNamespace)
 	builder := mutation.NewSidecarBuilder()
 	merger := config.NewMerger()
-	mutator := mutation.NewPodMutator(parser, loader, builder, merger, cfg.defaultConfigMap, cfg.configNamespace)
+	knativeDetector := mutation.NewKnativeDetector()
+	mutator := mutation.NewPodMutator(parser, loader, builder, merger, knativeDetector, cfg.defaultConfigMap, cfg.configNamespace)
 	handler := admission.NewHandler(mutator)
 	server, err := setupServer(handler, client, cfg.certFile, cfg.keyFile, cfg.port)
 	if err != nil {

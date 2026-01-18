@@ -50,6 +50,10 @@ type PatchBuilder interface {
 	// handlerType is one of: "httpGet", "tcpSocket"
 	ReplaceProbePort(containerIndex int, probeType, handlerType string, port int32) PatchBuilder
 
+	// ReplaceEnvVarValue replaces an environment variable's value in a container
+	// Used for Knative support to redirect queue-proxy's USER_PORT
+	ReplaceEnvVarValue(containerIndex, envIndex int, newValue string) PatchBuilder
+
 	// Build returns the accumulated patch operations
 	Build() []PatchOperation
 }
@@ -186,6 +190,17 @@ func (b *JSONPatchBuilder) ReplaceProbePort(containerIndex int, probeType, handl
 		Op: "replace",
 		Path: fmt.Sprintf("/spec/containers/%d/%s/%s/port", containerIndex, probeType, handlerType),
 		Value: port,
+	})
+
+	return b
+}
+
+// ReplaceEnvVarValue replaces an environment variable's value in a container
+func (b *JSONPatchBuilder) ReplaceEnvVarValue(containerIndex, envIndex int, newValue string) PatchBuilder {
+	b.operations = append(b.operations, PatchOperation{
+		Op: "replace",
+		Path: fmt.Sprintf("/spec/containers/%s/env/%s/value", containerIndex, envIndex),
+		Value: newValue,
 	})
 
 	return b
