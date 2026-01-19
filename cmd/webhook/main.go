@@ -19,7 +19,7 @@ import (
 	"github.com/spacemule/oauth2-proxy-injector/internal/annotation"
 	"github.com/spacemule/oauth2-proxy-injector/internal/config"
 	"github.com/spacemule/oauth2-proxy-injector/internal/mutation"
-	// "github.com/spacemule/oauth2-proxy-injector/internal/service"
+	"github.com/spacemule/oauth2-proxy-injector/internal/service"
 )
 
 
@@ -44,9 +44,13 @@ func main() {
 	builder := mutation.NewSidecarBuilder()
 	merger := config.NewMerger()
 	knativeDetector := mutation.NewKnativeDetector()
-	mutator := mutation.NewPodMutator(parser, loader, builder, merger, knativeDetector, cfg.defaultConfigMap, cfg.configNamespace)
-	handler := admission.NewHandler(mutator)
-	server, err := setupServer(handler, client, cfg.certFile, cfg.keyFile, cfg.port)
+	podMutator := mutation.NewPodMutator(parser, loader, builder, merger, knativeDetector, cfg.defaultConfigMap, cfg.configNamespace)
+	podHandler := admission.NewHandler(podMutator)
+
+	serviceMutator := service.NewServiceMutator()
+	serviceHandler := service.NewHandler(serviceMutator)
+
+	server, err := setupServer(podHandler, serviceHandler, client, cfg.certFile, cfg.keyFile, cfg.port)
 	if err != nil {
 		klog.Fatal("failed to create server: ", err)
 	}
@@ -95,9 +99,16 @@ func createKubernetesClient() (kubernetes.Interface, error) {
 }
 
 // setupServer creates and configures the HTTPS server
-func setupServer(handler *admission.Handler, client kubernetes.Interface, certFile, keyFile string, port int) (*http.Server, error) {
+//
+// TODO: Update signature to accept both handlers
+func setupServer(podHandler *admission.Handler, serviceHandler *service.Handler, client kubernetes.Interface, certFile, keyFile string, port int) (*http.Server, error) {
 	m := http.NewServeMux()
-	m.HandleFunc("/mutate", handler.HandleAdmission)
+
+	m.HandleFunc("/mutate", podHandler.HandleAdmission)
+	// Alias for clarity
+	m.HandleFunc("/mutate-pod", podHandler.HandleAdmission)
+
+	m.HandleFunc("/mutate-service", serviceHandler.HandleAdmission)
 	m.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})

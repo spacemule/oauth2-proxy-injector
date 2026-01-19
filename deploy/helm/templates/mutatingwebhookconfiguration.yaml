@@ -7,6 +7,7 @@ metadata:
   annotations:
     cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/{{ include "oauth2-proxy-injector.fullname" . }}
 webhooks:
+  # Pod mutation webhook - injects oauth2-proxy sidecar
   - name: oauth2-proxy.{{ .Values.webhook.domain }}
     clientConfig:
       service:
@@ -28,3 +29,27 @@ webhooks:
     sideEffects: None
     admissionReviewVersions: ["v1"]
     timeoutSeconds: {{ .Values.webhook.timeoutSeconds }}
+  {{- if .Values.webhook.serviceWebhook.enabled }}
+  # Service mutation webhook - rewrites targetPort for multi-port scenarios
+  - name: oauth2-proxy-service.{{ .Values.webhook.domain }}
+    clientConfig:
+      service:
+        name: {{ include "oauth2-proxy-injector.fullname" . }}
+        namespace: {{ .Release.Namespace }}
+        path: /mutate-service
+        port: {{ .Values.service.port }}
+      caBundle: ""
+    rules:
+      - operations: ["CREATE", "UPDATE"]
+        apiGroups: [""]
+        apiVersions: ["v1"]
+        resources: ["services"]
+        scope: Namespaced
+    namespaceSelector:
+      {{- toYaml .Values.namespaceSelector | nindent 6 }}
+    failurePolicy: {{ .Values.webhook.serviceWebhook.failurePolicy }}
+    reinvocationPolicy: IfNeeded
+    sideEffects: None
+    admissionReviewVersions: ["v1"]
+    timeoutSeconds: {{ .Values.webhook.timeoutSeconds }}
+  {{- end }}

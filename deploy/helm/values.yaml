@@ -26,10 +26,17 @@ webhook:
   port: 8443
   # Webhook domain used in MutatingWebhookConfiguration
   domain: spacemule.net
-  # Failure policy: Fail or Ignore
+  # Failure policy for pod webhook: Fail or Ignore
   failurePolicy: Fail
   # Timeout for webhook calls
   timeoutSeconds: 10
+  # Service mutation webhook configuration
+  serviceWebhook:
+    # Enable/disable Service mutation webhook
+    enabled: true
+    # Failure policy for service webhook: Fail or Ignore
+    # Ignore recommended - less critical than pod injection
+    failurePolicy: Ignore
 
 # Default ConfigMap configuration
 # The webhook uses a single default ConfigMap. Pods can override via annotation.
