@@ -1,0 +1,54 @@
+image: atlassian/default-image:2
+definitions:
+  steps:
+    - step:
+        script: &start-build |-
+          apk add --no-cache curl &&
+          curl -sLO "https://github.com/argoproj/argo-workflows/releases/download/v3.5.0/argo-linux-amd64.gz" &&
+          gunzip "argo-linux-amd64.gz" &&
+          chmod +x argo-linux-amd64 &&
+          mv ./argo-linux-amd64 /usr/local/bin/argo &&
+          echo $KUBECONFIG_B64 | base64 -d > /kubeconfig &&
+          export KUBECONFIG=/kubeconfig
+    - step:
+        script: &finish-build |-
+          argo -n argo logs --follow "${ARGO_JOBNAME}" &&
+          argo -n argo watch "${ARGO_JOBNAME}" &&
+          argo -n argo wait "${ARGO_JOBNAME}"
+
+pipelines:
+  branches:
+    deploy:
+      - step:
+          name: Submit argo workflow
+          image: atlassian/pipelines-kubectl
+          script:
+            - *start-build
+            - |
+              ARGO_JOBNAME=$(argo -n argo submit \
+              --from workflowtemplate/buildah-ssh-workflow-template \
+              -p dockerImage="oauth2-proxy-injector" \
+              -p helmChartPath="oauth2-proxy-injector" \
+              -p gitRevision="${BITBUCKET_BRANCH}" \
+              -p gitRepo="git@bitbucket.org:console_deepinnovations/oauth2-proxy-injector.git" \
+              -p tag="build-${BITBUCKET_BUILD_NUMBER}" \
+              --output name)
+            - *finish-build
+
+    deploy_dev:
+      - step:
+          name: Submit argo workflow
+          image: atlassian/pipelines-kubectl
+          script:
+            - *start-build
+            - |
+              ARGO_JOBNAME=$(argo -n argo submit \
+              --from workflowtemplate/buildah-ssh-workflow-template \
+              -p dockerImage="oauth2-proxy-injector" \
+              -p helmChartPath="oauth2-proxy-injector" \
+              -p gitRevision="${BITBUCKET_BRANCH}" \
+              -p gitRepo="git@bitbucket.org:console_deepinnovations/oauth2-proxy-injector.git" \
+              -p tag="dev-${BITBUCKET_BUILD_NUMBER}" \
+              -p valuesKey="devImage.tag" \
+              --output name)
+            - *finish-build
