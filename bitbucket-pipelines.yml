@@ -18,7 +18,7 @@ definitions:
 
 pipelines:
   branches:
-    deploy:
+    deep:
       - step:
           name: Submit argo workflow
           image: atlassian/pipelines-kubectl
@@ -35,7 +35,7 @@ pipelines:
               --output name)
             - *finish-build
 
-    deploy_dev:
+    deep_dev:
       - step:
           name: Submit argo workflow
           image: atlassian/pipelines-kubectl
