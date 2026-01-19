@@ -1,5 +1,5 @@
 # oauth2-proxy-injector multi-stage build
-FROM golang:1.25-alpine AS builder
+FROM docker.io/golang:1.25-alpine AS builder
 
 WORKDIR /app
 
@@ -13,7 +13,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     -o oauth2-proxy-webhook \
     ./cmd/webhook
 
-FROM alpine:latest
+FROM docker.io/alpine:latest
 
 USER nobody
 
