@@ -2,7 +2,9 @@ package mutation
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
@@ -219,13 +221,29 @@ func CalculatePortMapping(
 	containerPorts []corev1.ContainerPort,
 	cfg *config.EffectiveConfig,
 ) (PortMapping, error) {
-	for _, p := range containerPorts {
-		if p.Name == cfg.ProtectedPort {
-			return PortMapping{
-				ProxyPort: p.ContainerPort,
-				HostPort: p.HostPort,
-				TLSMode: cfg.UpstreamTLS,
-			}, nil
+	if annotation.IsNamedPort(cfg.ProtectedPort) {
+		for _, p := range containerPorts {
+			if p.Name == cfg.ProtectedPort {
+				return PortMapping{
+					ProxyPort: p.ContainerPort,
+					HostPort: p.HostPort,
+					TLSMode: cfg.UpstreamTLS,
+				}, nil
+			}
+		}
+	} else {
+		portNum, err := strconv.Atoi(cfg.ProtectedPort)
+		if err != nil {
+			return PortMapping{}, err
+		}
+		for _, p := range containerPorts {
+			if p.ContainerPort == int32(portNum) {
+				return PortMapping{
+					ProxyPort: p.ContainerPort,
+					HostPort: p.HostPort,
+					TLSMode: cfg.UpstreamTLS,
+				}, nil
+			}
 		}
 	}
 	return PortMapping{}, fmt.Errorf("matching port name %s not found", cfg.ProtectedPort)

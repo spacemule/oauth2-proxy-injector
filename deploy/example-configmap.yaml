@@ -206,3 +206,123 @@ spec:
           name: http  # This named port will be protected
         - containerPort: 9090
           name: metrics  # This port remains accessible directly
+
+---
+# =====================================================================
+# Service Mutation Webhook
+# =====================================================================
+#
+# For scenarios where you need to protect multiple ports or can't use
+# named port takeover, the Service webhook can rewrite targetPort values
+# to route traffic through oauth2-proxy.
+#
+# Use Cases:
+# - Multi-port applications (e.g., MediaMTX with HLS + WebRTC)
+# - Applications with numbered ports (no named ports)
+# - Selective port protection (only some ports need auth)
+#
+# How It Works:
+# 1. Pod gets oauth2-proxy sidecar injected (via Pod webhook)
+# 2. Service webhook rewrites specified targetPort values to the proxy port
+# 3. Traffic flows: Client -> Service -> oauth2-proxy -> App container
+#
+# =====================================================================
+
+---
+# Example Service using the oauth2-proxy Service mutation
+apiVersion: v1
+kind: Service
+metadata:
+  name: example-protected-service
+  namespace: default
+  annotations:
+    # ===== Core =====
+    # List of ports to route through oauth2-proxy (comma-separated)
+    # Can be port names OR port numbers
+    spacemule.net/oauth2-proxy.rewrite-ports: "http,hls"
+
+    # Optional: override proxy port (default: 4180)
+    # spacemule.net/oauth2-proxy.proxy-port: "4180"
+spec:
+  selector:
+    app: example-protected-app
+  ports:
+    - name: http
+      port: 80
+      targetPort: http    # Webhook rewrites this to 4180
+    - name: hls
+      port: 8888
+      targetPort: 8554    # Webhook rewrites this to 4180
+    - name: metrics
+      port: 9090
+      targetPort: 9090    # NOT in rewrite-ports, stays unchanged
+
+---
+# =====================================================================
+# MediaMTX Example (Multi-Port Application)
+# =====================================================================
+#
+# MediaMTX has multiple ports:
+# - 8554: RTSP
+# - 8888: HLS streaming
+# - 8889: WebRTC/API
+# - 9998: Metrics
+#
+# In this example, we protect HLS (8888) with oauth2-proxy while leaving
+# RTSP and metrics accessible directly.
+# =====================================================================
+
+---
+# MediaMTX Pod with oauth2-proxy injection
+apiVersion: v1
+kind: Pod
+metadata:
+  name: mediamtx
+  namespace: media
+  annotations:
+    spacemule.net/oauth2-proxy.enabled: "true"
+    spacemule.net/oauth2-proxy.config: "media-oauth-config"
+    # Numbered port = service mode (app keeps its ports, no takeover)
+    spacemule.net/oauth2-proxy.protected-port: "8888"
+    # Skip auth for HLS segment requests (performance)
+    spacemule.net/oauth2-proxy.ignore-paths: ".*\\.m3u8$,.*\\.ts$"
+spec:
+  containers:
+    - name: mediamtx
+      image: bluenviron/mediamtx:latest
+      ports:
+        - name: rtsp
+          containerPort: 8554
+        - name: hls
+          containerPort: 8888
+        - name: api
+          containerPort: 8889
+        - name: metrics
+          containerPort: 9998
+
+---
+# MediaMTX Service with selective port protection
+apiVersion: v1
+kind: Service
+metadata:
+  name: mediamtx
+  namespace: media
+  annotations:
+    # Only rewrite HLS port to go through oauth2-proxy
+    spacemule.net/oauth2-proxy.rewrite-ports: "hls"
+spec:
+  selector:
+    app: mediamtx
+  ports:
+    - name: rtsp
+      port: 8554
+      targetPort: 8554    # Direct to app (no auth needed for RTSP)
+    - name: hls
+      port: 8888
+      targetPort: hls     # Webhook rewrites to 4180 (through oauth2-proxy)
+    - name: api
+      port: 8889
+      targetPort: 8889    # Direct to app
+    - name: metrics
+      port: 9998
+      targetPort: 9998    # Direct to app (metrics scraping)
