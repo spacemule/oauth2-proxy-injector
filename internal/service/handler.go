@@ -1,101 +1,149 @@
-// package service
+package service
 
-// import (
-// 	"encoding/json"
-// 	"fmt"
-// 	"io"
-// 	"net/http"
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"fmt"
+	"io"
 
-// 	admissionv1 "k8s.io/api/admission/v1"
-// 	corev1 "k8s.io/api/core/v1"
-// 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-// 	"k8s.io/apimachinery/pkg/runtime"
-// 	"k8s.io/apimachinery/pkg/runtime/serializer"
-// 	"k8s.io/klog/v2"
-// )
+	admissionv1 "k8s.io/api/admission/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/klog/v2"
+)
 
-// var (
-// 	runtimeScheme = runtime.NewScheme()
-// 	codecs        = serializer.NewCodecFactory(runtimeScheme)
-// 	deserializer  = codecs.UniversalDeserializer()
-// )
+// Handler handles admission requests for Service resources
+type Handler struct {
+	mutator Mutator
+}
 
-// func init() {
-// 	_ = corev1.AddToScheme(runtimeScheme)
-// 	_ = admissionv1.AddToScheme(runtimeScheme)
-// }
+// NewHandler creates a new admission Handler for Services
+func NewHandler(mutator Mutator) *Handler {
+	return &Handler{
+		mutator: mutator,
+	}
+}
 
-// // Handler handles admission requests for Service resources
-// type Handler struct {
-// 	mutator Mutator
-// }
+// HandleAdmission processes a Service admission request
+func (h *Handler) HandleAdmission(w http.ResponseWriter, r *http.Request) {
+	var review admissionv1.AdmissionReview
+	
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if r.Header.Get("Content-Type") != "application/json" {
+		http.Error(w, "Unsupported Media Type", http.StatusUnsupportedMediaType)
+		return
+	}
+	
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1*1024*1024))
+	if err != nil {
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+	err = json.Unmarshal(body, &review)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Bad Request: %v", err), http.StatusBadRequest)
+		return
+	}
 
-// // NewHandler creates a new admission Handler for Services
-// func NewHandler(mutator Mutator) *Handler {
-// 	return &Handler{
-// 		mutator: mutator,
-// 	}
-// }
+	if review.Request == nil {
+		review.Response = denied("", "missing request in AdmissionReview")
+		writeAdmissionReview(w, &review)
+		return
+	}
 
-// // HandleAdmission processes a Service admission request
-// //
-// // TODO: Implement this function (similar to pod admission handler)
-// // 1. Read request body
-// // 2. Deserialize AdmissionReview
-// // 3. Validate it's a Service resource
-// // 4. Deserialize Service from AdmissionRequest.Object
-// // 5. Call mutator.Mutate(ctx, service)
-// // 6. If patches returned, create JSONPatch response
-// // 7. If error, create failed AdmissionResponse with error message
-// // 8. Write AdmissionReview response
-// //
-// // Note: This is very similar to internal/admission/handler.go
-// // Consider extracting common logic into a shared package if duplication is significant
-// func (h *Handler) HandleAdmission(w http.ResponseWriter, r *http.Request) {
-// 	panic("TODO: implement")
-// }
+	resp := h.handleAdmissionRequest(r.Context(), review.Request)
+	review.Response = resp
+	writeAdmissionReview(w, &review)
+}
 
-// // createAdmissionResponse creates an AdmissionResponse for a successful mutation
-// //
-// // TODO: Implement this function
-// // 1. If patches is empty, return Allowed=true with no patch
-// // 2. If patches exist:
-// //    a. Marshal patches to JSON
-// //    b. Set PatchType to JSONPatch
-// //    c. Set Patch to marshaled bytes
-// // 3. Return AdmissionResponse
-// func createAdmissionResponse(uid string, patches []byte) *admissionv1.AdmissionResponse {
-// 	panic("TODO: implement")
-// }
+// handleAdmissionRequest processes a single admission request
+func (h *Handler) handleAdmissionRequest(ctx context.Context, request *admissionv1.AdmissionRequest) *admissionv1.AdmissionResponse {
+	svc := &corev1.Service{}
+	
+	if request.UID == "" {
+		return denied("", "UID not set")
+	}
 
-// // createErrorResponse creates an AdmissionResponse for a failed mutation
-// //
-// // TODO: Implement this function
-// // 1. Return AdmissionResponse with:
-// //    - UID set
-// //    - Allowed = false
-// //    - Result with Status=Failure and Message=error
-// func createErrorResponse(uid string, err error) *admissionv1.AdmissionResponse {
-// 	panic("TODO: implement")
-// }
+	if request.Kind.Group != "" || request.Kind.Version != "v1" || request.Kind.Kind != "Service"  {
+		return allowed(string(request.UID))
+	}
 
-// // writeResponse writes an AdmissionReview response
-// //
-// // TODO: Implement this function
-// // 1. Create AdmissionReview with response
-// // 2. Set Content-Type header
-// // 3. Marshal and write response
-// func writeResponse(w http.ResponseWriter, response *admissionv1.AdmissionResponse) {
-// 	panic("TODO: implement")
-// }
+	if err := json.Unmarshal(request.Object.Raw, svc); err != nil {
+		return denied(string(request.UID), fmt.Sprintf("failed to unmarshal service: %v", err))
+	}
 
-// // Suppress unused import errors during scaffolding
-// var (
-// 	_ = json.Marshal
-// 	_ = fmt.Sprintf
-// 	_ = io.ReadAll
-// 	_ = http.MethodPost
-// 	_ = admissionv1.SchemeGroupVersion
-// 	_ = metav1.Now
-// 	_ = klog.Info
-// )
+	if request.Operation != admissionv1.Create {
+		return allowed(string(request.UID))
+	}
+	
+	klog.InfoS("processing admission request",
+		"service", svc.Name,
+		"namespace", request.Namespace,
+		"operation", request.Operation,
+	)
+
+	patches, err := h.mutator.Mutate(ctx, svc)
+	if err != nil {
+		return denied(string(request.UID), err.Error())
+	}
+	if len(patches) == 0 {
+		return allowed(string(request.UID))
+	}
+
+	jsonPatches, err := json.Marshal(patches)
+	if err != nil {
+		return denied(string(request.UID), err.Error())
+	}
+
+	return patchResponse(string(request.UID), jsonPatches)
+	
+}
+
+// allowed returns an AdmissionResponse allowing the request
+func allowed(uid string) *admissionv1.AdmissionResponse {
+	return &admissionv1.AdmissionResponse{
+		UID: types.UID(uid),
+		Allowed: true,
+	}
+}
+
+// denied returns an AdmissionResponse denying the request
+func denied(uid string, message string) *admissionv1.AdmissionResponse {
+	return &admissionv1.AdmissionResponse{
+		UID: types.UID(uid),
+		Allowed: false,
+		Result: &metav1.Status{
+			Message: message,
+		},
+	}
+}
+
+// patchResponse returns an AdmissionResponse with a JSON patch
+// Takes already-marshaled patch bytes
+func patchResponse(uid string, patch []byte) *admissionv1.AdmissionResponse {
+	pt := admissionv1.PatchTypeJSONPatch
+	return &admissionv1.AdmissionResponse{
+		UID: types.UID(uid),
+		Allowed: true,
+		PatchType: &pt,
+		Patch: patch,
+	}
+}
+
+// writeAdmissionReview writes an AdmissionReview response
+// Note: Must write the full AdmissionReview, not just AdmissionResponse
+func writeAdmissionReview(w http.ResponseWriter, review *admissionv1.AdmissionReview) {
+	body, err := json.Marshal(review)
+	if err != nil {
+		http.Error(w, "could not marshal review", 500)
+		return
+	}
+	w.Header().Add("content-type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(body)
+}

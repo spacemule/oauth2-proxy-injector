@@ -19,7 +19,7 @@ import (
 	"github.com/spacemule/oauth2-proxy-injector/internal/annotation"
 	"github.com/spacemule/oauth2-proxy-injector/internal/config"
 	"github.com/spacemule/oauth2-proxy-injector/internal/mutation"
-	// "github.com/spacemule/oauth2-proxy-injector/internal/service"
+	"github.com/spacemule/oauth2-proxy-injector/internal/service"
 )
 
 
@@ -44,16 +44,9 @@ func main() {
 	builder := mutation.NewSidecarBuilder()
 	merger := config.NewMerger()
 	knativeDetector := mutation.NewKnativeDetector()
-	mutator := mutation.NewPodMutator(parser, loader, builder, merger, knativeDetector, cfg.defaultConfigMap, cfg.configNamespace)
-	handler := admission.NewHandler(mutator)
-	server, err := setupServer(handler, client, cfg.certFile, cfg.keyFile, cfg.port)
-	podMutator := mutation.NewPodMutator(parser, loader, builder, merger, cfg.defaultConfigMap, cfg.configNamespace)
+	podMutator := mutation.NewPodMutator(parser, loader, builder, merger, knativeDetector, cfg.defaultConfigMap, cfg.configNamespace)
 	podHandler := admission.NewHandler(podMutator)
 
-	// TODO: Wire up Service mutator
-	// 1. Create service.NewServiceMutator()
-	// 2. Create service.NewHandler(serviceMutator)
-	// 3. Pass both handlers to setupServer
 	serviceMutator := service.NewServiceMutator()
 	serviceHandler := service.NewHandler(serviceMutator)
 
@@ -108,20 +101,14 @@ func createKubernetesClient() (kubernetes.Interface, error) {
 // setupServer creates and configures the HTTPS server
 //
 // TODO: Update signature to accept both handlers
-// Current: func setupServer(handler *admission.Handler, ...)
-// New: func setupServer(podHandler *admission.Handler, serviceHandler *service.Handler, ...)
 func setupServer(podHandler *admission.Handler, serviceHandler *service.Handler, client kubernetes.Interface, certFile, keyFile string, port int) (*http.Server, error) {
-func setupServer(handler *admission.Handler, client kubernetes.Interface, certFile, keyFile string, port int) (*http.Server, error) {
 	m := http.NewServeMux()
 
-	// Pod mutation endpoint (existing)
 	m.HandleFunc("/mutate", podHandler.HandleAdmission)
 	// Alias for clarity
 	m.HandleFunc("/mutate-pod", podHandler.HandleAdmission)
 
-	// Service mutation endpoint (new)
 	m.HandleFunc("/mutate-service", serviceHandler.HandleAdmission)
-	m.HandleFunc("/mutate", handler.HandleAdmission)
 	m.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
