@@ -14,11 +14,8 @@ import (
 
 // PortMapping represents the mapping between proxy and upstream ports
 type PortMapping struct {
-	// ProxyPort is the port oauth2-proxy proxies (internal-facing)
+	// ProxyPort is the port oauth2-proxy forwards to (the app's original port)
 	ProxyPort int32
-
-	// HostPort is the port oauth2-proxy listens on the host IP (external-facing)
-	HostPort int32
 
 	// TLSMode sets if the upstream is http, https, or https without TLS validation
 	TLSMode annotation.UpstreamTLSMode
@@ -51,10 +48,9 @@ func (b *OAuth2ProxySidecarBuilder) Build(cfg *config.EffectiveConfig, portMappi
 		Args:  buildArgs(cfg, portMapping),
 		Env:   buildEnvVars(cfg),
 		Ports: []corev1.ContainerPort{
-			corev1.ContainerPort{
+			{
 				Name:          portName,
 				ContainerPort: 4180,
-				HostPort:      portMapping.HostPort,
 				Protocol:      corev1.ProtocolTCP,
 			},
 		},
@@ -226,7 +222,6 @@ func CalculatePortMapping(
 			if p.Name == cfg.ProtectedPort {
 				return PortMapping{
 					ProxyPort: p.ContainerPort,
-					HostPort:  p.HostPort,
 					TLSMode:   cfg.UpstreamTLS,
 				}, nil
 			}
@@ -240,7 +235,6 @@ func CalculatePortMapping(
 			if p.ContainerPort == int32(portNum) {
 				return PortMapping{
 					ProxyPort: p.ContainerPort,
-					HostPort:  p.HostPort,
 					TLSMode:   cfg.UpstreamTLS,
 				}, nil
 			}
