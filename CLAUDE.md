@@ -92,7 +92,14 @@ The webhook supports two modes based on how `protected-port` is specified:
 - oauth2-proxy sidecar gets a generic port name (`oauth2-proxy`)
 - Probes are NOT rewritten (they still point at app container)
 - Use with Service webhook to rewrite `targetPort` values
-- Use `upstream` annotation to specify which backend port to proxy
+- Upstream is auto-calculated from the numbered port
+
+**Upstream-only mode** (e.g., `upstream: "http://127.0.0.1:8080"`):
+- Alternative to numbered port mode
+- Explicitly specify the upstream URL instead of auto-calculating
+- Useful for edge cases where port detection doesn't work
+
+**Validation**: Either `protected-port` OR `upstream` must be set. If neither is provided, it's an error.
 
 ### ConfigMap-Based Proxy Settings
 
@@ -316,15 +323,12 @@ Use cases:
 - ✅ ~~Add annotation constants for overrides~~ (Done in parser.go)
 - ✅ ~~Implement `internal/annotation/parser.go` Parse()~~ (Done)
 - ✅ ~~Implement `internal/config/merge.go`~~ (Done)
-- Update `internal/mutation/sidecar.go` to use EffectiveConfig (see TODOs in file)
-- Update `internal/mutation/mutator.go` to integrate config merging (see TODOs in file)
-- Update `cmd/webhook/main.go` to wire up Merger (see TODOs in file)
-- Implement annotation-only mode (no ConfigMap required) - see TODOs in mutator.go, types.go, main.go
-- Parse new annotation overrides in parser.go (provider, oidc-issuer-url, etc.) - see TODO in parser.go
-- Merge new override fields in merge.go - see TODO in merge.go
-- Handle upstream override in sidecar.go buildArgs() - see TODO in sidecar.go
-- Implement named vs numbered port behavior in mutator.go and sidecar.go - see TODOs in files
-- Implement Service mutator - see TODOs in internal/service/*.go
+- ✅ ~~Update `internal/mutation/sidecar.go` to use EffectiveConfig~~ (Done)
+- ✅ ~~Update `internal/mutation/mutator.go` to integrate config merging~~ (Done)
+- ✅ ~~Handle upstream override in sidecar.go buildArgs()~~ (Done)
+- ✅ ~~Implement upstream-only mode validation in merge.go~~ (Done - requires either protected-port OR upstream)
+- ✅ ~~Implement named vs numbered port behavior in mutator.go and sidecar.go~~ (Done)
+- ✅ ~~Implement Service mutator~~ (Done - internal/service/*.go)
 
 ## Service Mutating Webhook
 
@@ -373,7 +377,7 @@ For MediaMTX with HLS on port 8888 and the main API on 8889:
 **Pod annotations:**
 ```yaml
 spacemule.net/oauth2-proxy.enabled: "true"
-spacemule.net/oauth2-proxy.upstream: "http://127.0.0.1:8888"  # Route to HLS port
+spacemule.net/oauth2-proxy.protected-port: "8888"  # Numbered port = service mode
 ```
 
 **Service annotations:**
@@ -393,3 +397,21 @@ This way, HLS traffic goes through oauth2-proxy, while other ports remain direct
 
 - `/mutate` or `/mutate-pod` - Pod mutation (existing)
 - `/mutate-service` - Service mutation (new)
+
+## Future Features
+
+### iptables Init Container for Port Blocking
+
+**Problem**: In service mode, the app container's ports are still accessible directly via pod IP, bypassing oauth2-proxy.
+
+**Solution**: Add an init container that runs iptables rules to block direct connections to protected ports, only allowing traffic from oauth2-proxy (localhost).
+
+**Implementation notes**:
+- Init container needs `NET_ADMIN` capability
+- Block incoming connections to protected port(s) except from 127.0.0.1
+- Example rule: `iptables -A INPUT -p tcp --dport 8888 ! -s 127.0.0.1 -j DROP`
+- **Health check consideration**: Kubelet health checks come from the node, not localhost. If probes target the protected port directly, they will be blocked. Options:
+  - Use a separate health check port that isn't protected
+  - Route health checks through oauth2-proxy (add to `ignore-paths`)
+  - Allow traffic from the node IP (more complex, need to detect node IP)
+- May need annotation to opt-in: `spacemule.net/oauth2-proxy.block-direct-access: "true"`

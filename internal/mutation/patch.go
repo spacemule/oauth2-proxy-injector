@@ -73,15 +73,15 @@ type JSONPatchBuilder struct {
 func NewPatchBuilder(hasAnnotations, hasLabels, hasVolumes bool) *JSONPatchBuilder {
 	return &JSONPatchBuilder{
 		hasAnnotations: hasAnnotations,
-		hasLabels: hasLabels,
-		hasVolumes: hasVolumes,
+		hasLabels:      hasLabels,
+		hasVolumes:     hasVolumes,
 	}
 }
 
 func (b *JSONPatchBuilder) AddContainer(container interface{}) PatchBuilder {
 	b.operations = append(b.operations, PatchOperation{
-		Op: "add",
-		Path: "/spec/containers/-",
+		Op:    "add",
+		Path:  "/spec/containers/-",
 		Value: container,
 	})
 	return b
@@ -89,8 +89,8 @@ func (b *JSONPatchBuilder) AddContainer(container interface{}) PatchBuilder {
 
 func (b *JSONPatchBuilder) AddInitContainer(container interface{}) PatchBuilder {
 	b.operations = append(b.operations, PatchOperation{
-		Op: "add",
-		Path: "/spec/initContainers/-",
+		Op:    "add",
+		Path:  "/spec/initContainers/-",
 		Value: container,
 	})
 	return b
@@ -100,36 +100,35 @@ func (b *JSONPatchBuilder) AddInitContainer(container interface{}) PatchBuilder 
 func (b *JSONPatchBuilder) AddVolume(volume interface{}) PatchBuilder {
 	if !b.hasVolumes {
 		b.operations = append(b.operations, PatchOperation{
-			Op: "add",
-			Path: "/spec/volumes",
+			Op:    "add",
+			Path:  "/spec/volumes",
 			Value: []interface{}{},
 		})
 		b.hasVolumes = true
 	}
-	
+
 	b.operations = append(b.operations, PatchOperation{
-		Op: "add",
-		Path: "/spec/volumes/-",
+		Op:    "add",
+		Path:  "/spec/volumes/-",
 		Value: volume,
 	})
-	
+
 	return b
 }
 
 func (b *JSONPatchBuilder) AddVolumeMountsArray(containerIndex int) PatchBuilder {
 	b.operations = append(b.operations, PatchOperation{
-		Op: "add",
-		Path: fmt.Sprintf("/spec/containers/%d/volumeMounts", containerIndex),
+		Op:    "add",
+		Path:  fmt.Sprintf("/spec/containers/%d/volumeMounts", containerIndex),
 		Value: []interface{}{},
-		
 	})
 	return b
 }
 
 func (b *JSONPatchBuilder) AddVolumeMount(containerIndex int, mount interface{}) PatchBuilder {
 	b.operations = append(b.operations, PatchOperation{
-		Op: "add",
-		Path: fmt.Sprintf("/spec/containers/%d/volumeMounts/-", containerIndex),
+		Op:    "add",
+		Path:  fmt.Sprintf("/spec/containers/%d/volumeMounts/-", containerIndex),
 		Value: mount,
 	})
 	return b
@@ -139,16 +138,16 @@ func (b *JSONPatchBuilder) AddVolumeMount(containerIndex int, mount interface{})
 func (b *JSONPatchBuilder) AddAnnotation(key, value string) PatchBuilder {
 	if !b.hasAnnotations {
 		b.operations = append(b.operations, PatchOperation{
-			Op: "add",
-			Path: "/metadata/annotations",
+			Op:    "add",
+			Path:  "/metadata/annotations",
 			Value: map[string]string{},
 		})
 
 		b.hasAnnotations = true
 	}
 	b.operations = append(b.operations, PatchOperation{
-		Op: "add",
-		Path: "/metadata/annotations/" + escapeJSONPointer(key),
+		Op:    "add",
+		Path:  "/metadata/annotations/" + escapeJSONPointer(key),
 		Value: value,
 	})
 
@@ -159,16 +158,16 @@ func (b *JSONPatchBuilder) AddAnnotation(key, value string) PatchBuilder {
 func (b *JSONPatchBuilder) AddLabel(key, value string) PatchBuilder {
 	if !b.hasLabels {
 		b.operations = append(b.operations, PatchOperation{
-			Op: "add",
-			Path: "/metadata/labels",
+			Op:    "add",
+			Path:  "/metadata/labels",
 			Value: map[string]string{},
 		})
 
 		b.hasLabels = true
 	}
 	b.operations = append(b.operations, PatchOperation{
-		Op: "add",
-		Path: "/metadata/labels/" + escapeJSONPointer(key),
+		Op:    "add",
+		Path:  "/metadata/labels/" + escapeJSONPointer(key),
 		Value: value,
 	})
 
@@ -177,7 +176,7 @@ func (b *JSONPatchBuilder) AddLabel(key, value string) PatchBuilder {
 
 func (b *JSONPatchBuilder) RemovePort(containerIndex, portIndex int) PatchBuilder {
 	b.operations = append(b.operations, PatchOperation{
-		Op: "remove",
+		Op:   "remove",
 		Path: fmt.Sprintf("/spec/containers/%d/ports/%d", containerIndex, portIndex),
 	})
 
@@ -187,8 +186,8 @@ func (b *JSONPatchBuilder) RemovePort(containerIndex, portIndex int) PatchBuilde
 // ReplaceProbePort replaces a probe's port from a name to a number
 func (b *JSONPatchBuilder) ReplaceProbePort(containerIndex int, probeType, handlerType string, port int32) PatchBuilder {
 	b.operations = append(b.operations, PatchOperation{
-		Op: "replace",
-		Path: fmt.Sprintf("/spec/containers/%d/%s/%s/port", containerIndex, probeType, handlerType),
+		Op:    "replace",
+		Path:  fmt.Sprintf("/spec/containers/%d/%s/%s/port", containerIndex, probeType, handlerType),
 		Value: port,
 	})
 
@@ -198,8 +197,8 @@ func (b *JSONPatchBuilder) ReplaceProbePort(containerIndex int, probeType, handl
 // ReplaceEnvVarValue replaces an environment variable's value in a container
 func (b *JSONPatchBuilder) ReplaceEnvVarValue(containerIndex, envIndex int, newValue string) PatchBuilder {
 	b.operations = append(b.operations, PatchOperation{
-		Op: "replace",
-		Path: fmt.Sprintf("/spec/containers/%d/env/%d/value", containerIndex, envIndex),
+		Op:    "replace",
+		Path:  fmt.Sprintf("/spec/containers/%d/env/%d/value", containerIndex, envIndex),
 		Value: newValue,
 	})
 

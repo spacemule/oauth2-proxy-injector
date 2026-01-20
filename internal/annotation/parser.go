@@ -110,7 +110,7 @@ const (
 	// KeyCookieDomains overrides the cookie domains from ConfigMap
 	// Value: comma-separated domains (e.g., "example.com,corp.example.com")
 	KeyCookieDomains = AnnotationPrefix + "cookie-domains"
-	
+
 	// ===== Routing Overrides (override ConfigMap values) =====
 
 	// KeyRedirectURL overrides the OAuth callback URL from ConfigMap
@@ -181,7 +181,6 @@ const (
 	// When set, this REPLACES the auto-calculated upstream from port mapping
 	KeyUpstream = AnnotationPrefix + "upstream"
 )
-
 
 // UpstreamTLSMode represents the TLS verification mode for upstream connections
 type UpstreamTLSMode string
@@ -259,11 +258,11 @@ type ConfigOverrides struct {
 
 	// EmailDomains overrides allowed email domains
 	// nil = use ConfigMap, empty slice = explicitly no domains allowed
-	EmailDomains []string
+	EmailDomains    []string
 	EmailDomainsSet bool
 
 	// AllowedGroups overrides allowed groups
-	AllowedGroups []string
+	AllowedGroups    []string
 	AllowedGroupsSet bool
 
 	// AllowedEmails overrides allowed email addresses
@@ -271,14 +270,14 @@ type ConfigOverrides struct {
 	// AllowedEmailsSet bool
 
 	// WhitelistDomains overrides allowed domains
-	WhitelistDomains []string
+	WhitelistDomains    []string
 	WhitelistDomainsSet bool
 
 	// CookieName overrides cookie name
 	CookieName *string
-	
+
 	// CookieDomains overrides cookie domains
-	CookieDomains []string
+	CookieDomains    []string
 	CookieDomainsSet bool
 
 	// ===== Routing Overrides =====
@@ -287,7 +286,7 @@ type ConfigOverrides struct {
 	RedirectURL *string
 
 	// ExtraJWTIssuers overrides extra JWT issuers
-	ExtraJWTIssuers []string
+	ExtraJWTIssuers    []string
 	ExtraJWTIssuersSet bool
 
 	// ===== Header Overrides =====
@@ -351,12 +350,12 @@ func NewParser() *AnnotationParser {
 func (p *AnnotationParser) Parse(annotations map[string]string) (*Config, error) {
 	var (
 		cfg *Config = &Config{
-			ProtectedPort: "http",
-			IgnorePaths: []string{},
-			APIPaths: []string{},
+			ProtectedPort:       "http",
+			IgnorePaths:         []string{},
+			APIPaths:            []string{},
 			SkipJWTBearerTokens: false,
-			UpstreamTLS: UpstreamNoTLS,
-			Overrides: ConfigOverrides{},
+			UpstreamTLS:         UpstreamNoTLS,
+			Overrides:           ConfigOverrides{},
 		}
 	)
 
@@ -397,13 +396,13 @@ func (p *AnnotationParser) Parse(annotations map[string]string) (*Config, error)
 
 	if v, ok := annotations[KeyCookieSecure]; ok {
 		b, err := parseBoolPtr(v)
-		if err != nil{
+		if err != nil {
 			return nil, err
 		}
 		cfg.Overrides.CookieSecure = b
 	}
 
-	if v, ok := annotations[KeyProtectedPort];ok {
+	if v, ok := annotations[KeyProtectedPort]; ok {
 		cfg.ProtectedPort = strings.TrimSpace(v)
 	}
 
@@ -437,7 +436,7 @@ func (p *AnnotationParser) Parse(annotations map[string]string) (*Config, error)
 		s := strings.TrimSpace(v)
 		cfg.Overrides.ClientID = &s
 	}
-	
+
 	if v, ok := annotations[KeyClientSecretRef]; ok {
 		s := strings.TrimSpace(v)
 		cfg.Overrides.ClientSecretRef = &s
@@ -455,7 +454,7 @@ func (p *AnnotationParser) Parse(annotations map[string]string) (*Config, error)
 
 	if v, ok := annotations[KeyPKCEEnabled]; ok {
 		b, err := parseBoolPtr(v)
-		if err != nil{
+		if err != nil {
 			return nil, err
 		}
 		cfg.Overrides.PKCEEnabled = b
@@ -472,8 +471,8 @@ func (p *AnnotationParser) Parse(annotations map[string]string) (*Config, error)
 	}
 
 	// if v, ok := annotations[KeyAllowedEmails]; ok {
-		// cfg.Overrides.AllowedEmails = parsePaths(v)
-		// cfg.Overrides.AllowedEmailsSet = true
+	// cfg.Overrides.AllowedEmails = parsePaths(v)
+	// cfg.Overrides.AllowedEmailsSet = true
 	// }
 
 	if v, ok := annotations[KeyWhitelistDomains]; ok {
@@ -487,10 +486,10 @@ func (p *AnnotationParser) Parse(annotations map[string]string) (*Config, error)
 	}
 
 	if v, ok := annotations[KeyCookieDomains]; ok {
-		cfg.Overrides.CookieDomains= parsePaths(v)
+		cfg.Overrides.CookieDomains = parsePaths(v)
 		cfg.Overrides.CookieDomainsSet = true
 	}
-	
+
 	if v, ok := annotations[KeyRedirectURL]; ok {
 		s := strings.TrimSpace(v)
 		cfg.Overrides.RedirectURL = &s
@@ -503,7 +502,7 @@ func (p *AnnotationParser) Parse(annotations map[string]string) (*Config, error)
 
 	if v, ok := annotations[KeyPassAccessToken]; ok {
 		b, err := parseBoolPtr(v)
-		if err != nil{
+		if err != nil {
 			return nil, err
 		}
 		cfg.Overrides.PassAccessToken = b
@@ -511,7 +510,7 @@ func (p *AnnotationParser) Parse(annotations map[string]string) (*Config, error)
 
 	if v, ok := annotations[KeySetXAuthRequest]; ok {
 		b, err := parseBoolPtr(v)
-		if err != nil{
+		if err != nil {
 			return nil, err
 		}
 		cfg.Overrides.SetXAuthRequest = b
@@ -519,7 +518,7 @@ func (p *AnnotationParser) Parse(annotations map[string]string) (*Config, error)
 
 	if v, ok := annotations[KeyPassAuthorizationHeader]; ok {
 		b, err := parseBoolPtr(v)
-		if err != nil{
+		if err != nil {
 			return nil, err
 		}
 		cfg.Overrides.PassAuthorizationHeader = b
@@ -527,7 +526,7 @@ func (p *AnnotationParser) Parse(annotations map[string]string) (*Config, error)
 
 	if v, ok := annotations[KeySkipProviderButton]; ok {
 		b, err := parseBoolPtr(v)
-		if err != nil{
+		if err != nil {
 			return nil, err
 		}
 		cfg.Overrides.SkipProviderButton = b
@@ -553,7 +552,7 @@ func parseBoolPtr(value string) (*bool, error) {
 	}
 }
 
-func parsePaths(pathsStr string) ([]string) {
+func parsePaths(pathsStr string) []string {
 	var result []string
 	if pathsStr == "" {
 		return result

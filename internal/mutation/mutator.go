@@ -26,15 +26,15 @@ type Mutator interface {
 
 // PodMutator implements Mutator for oauth2-proxy sidecar injection
 type PodMutator struct {
-	annotationParser   annotation.Parser
-	configLoader       config.Loader
-	sidecarBuilder     SidecarBuilder
-	configMerger       config.Merger
-	knativeDetector    KnativeDetector
+	annotationParser annotation.Parser
+	configLoader     config.Loader
+	sidecarBuilder   SidecarBuilder
+	configMerger     config.Merger
+	knativeDetector  KnativeDetector
 
 	// defaultConfigMap is the name of the default ConfigMap in the webhook's namespace
 	// Used when pods don't specify spacemule.net/oauth2-proxy.config annotation
-	defaultConfigMap   string
+	defaultConfigMap string
 
 	// defaultConfigNamespace is the namespace where the default ConfigMap lives
 	// Typically the webhook's own namespace
@@ -88,7 +88,7 @@ func (m *PodMutator) Mutate(ctx context.Context, pod *corev1.Pod) ([]PatchOperat
 	if isAlreadyInjected(pod) {
 		return ret, nil
 	}
-	
+
 	if annotationCfg.ConfigMapName != "" {
 		cm = annotationCfg.ConfigMapName
 		cmNamespace = pod.Namespace
@@ -96,7 +96,7 @@ func (m *PodMutator) Mutate(ctx context.Context, pod *corev1.Pod) ([]PatchOperat
 		cm = m.defaultConfigMap
 		cmNamespace = m.defaultConfigNamespace
 	}
-	
+
 	if cm != "" {
 		proxyCfg, err = m.configLoader.Load(ctx, cm, cmNamespace)
 		if err != nil {
@@ -105,16 +105,19 @@ func (m *PodMutator) Mutate(ctx context.Context, pod *corev1.Pod) ([]PatchOperat
 	} else {
 		proxyCfg = config.NewEmptyProxyConfig()
 	}
-	
+
 	effectiveCfg, err := m.configMerger.Merge(proxyCfg, annotationCfg)
 	if err != nil {
-		 return nil, err
+		return nil, err
 	}
 
-	ports := collectContainerPorts(pod)
-	mapping, err := CalculatePortMapping(ports, effectiveCfg)
-	if err != nil {
-		return nil, err
+	var mapping PortMapping
+	if effectiveCfg.ProtectedPort != "" {
+		ports := collectContainerPorts(pod)
+		mapping, err = CalculatePortMapping(ports, effectiveCfg)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	container, volumes := m.sidecarBuilder.Build(effectiveCfg, mapping)
@@ -160,20 +163,20 @@ func (m *PodMutator) patchKnativeQueueProxy(pod *corev1.Pod, patchBuilder *JSONP
 		return fmt.Errorf("unexpected state: USER_PORT env not found")
 	}
 	patchBuilder.ReplaceEnvVarValue(c, i, "4180")
-	
+
 	return nil
 }
 
 // collectContainerPorts gathers all ports from all containers in the pod
 func collectContainerPorts(pod *corev1.Pod) []corev1.ContainerPort {
 	var ret []corev1.ContainerPort
-	
+
 	for _, c := range pod.Spec.Containers {
 		for _, p := range c.Ports {
 			ret = append(ret, p)
 		}
 	}
-	
+
 	return ret
 }
 
@@ -210,7 +213,7 @@ func rewriteProbePortNames(pod *corev1.Pod, protectedPortName string, originalPo
 			ret = append(ret, *v)
 		}
 	}
-	
+
 	return ret
 }
 
@@ -222,17 +225,17 @@ func checkProbe(probe *corev1.Probe, probeType string, containerIndex int, prote
 	if probe.HTTPGet != nil && probe.HTTPGet.Port.Type == intstr.String && probe.HTTPGet.Port.StrVal == protectedPortName {
 		return &probeRewrite{
 			ContainerIndex: containerIndex,
-			ProbeType: probeType,
-			HandlerType: "httpGet",
-			NewPort: originalPortNumber,
+			ProbeType:      probeType,
+			HandlerType:    "httpGet",
+			NewPort:        originalPortNumber,
 		}
 	}
 	if probe.TCPSocket != nil && probe.TCPSocket.Port.Type == intstr.String && probe.TCPSocket.Port.StrVal == protectedPortName {
 		return &probeRewrite{
 			ContainerIndex: containerIndex,
-			ProbeType: probeType,
-			HandlerType: "tcpSocket",
-			NewPort: originalPortNumber,
+			ProbeType:      probeType,
+			HandlerType:    "tcpSocket",
+			NewPort:        originalPortNumber,
 		}
 	}
 	return nil

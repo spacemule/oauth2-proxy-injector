@@ -21,7 +21,7 @@ const ContentTypeJSON = "application/json"
 
 // Handler handles Kubernetes admission webhook requests
 type Handler struct {
-	mutator     mutation.Mutator
+	mutator mutation.Mutator
 }
 
 // NewHandler creates a new admission Handler
@@ -35,7 +35,7 @@ func NewHandler(mutator mutation.Mutator) *Handler {
 // This is the main entry point for admission webhook requests
 func (h *Handler) HandleAdmission(w http.ResponseWriter, r *http.Request) {
 	var review admissionv1.AdmissionReview
-	
+
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 		return
@@ -44,7 +44,7 @@ func (h *Handler) HandleAdmission(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unsupported Media Type", http.StatusUnsupportedMediaType)
 		return
 	}
-	
+
 	body, err := io.ReadAll(io.LimitReader(r.Body, 1*1024*1024))
 	if err != nil {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
@@ -70,12 +70,12 @@ func (h *Handler) HandleAdmission(w http.ResponseWriter, r *http.Request) {
 // handleAdmissionRequest processes a single admission request
 func (h *Handler) handleAdmissionRequest(ctx context.Context, request *admissionv1.AdmissionRequest) *admissionv1.AdmissionResponse {
 	pod := &corev1.Pod{}
-	
+
 	if request.UID == "" {
 		return denied("", "UID not set")
 	}
 
-	if request.Kind.Group != "" || request.Kind.Version != "v1" || request.Kind.Kind != "Pod"  {
+	if request.Kind.Group != "" || request.Kind.Version != "v1" || request.Kind.Kind != "Pod" {
 		return allowed(string(request.UID))
 	}
 
@@ -86,7 +86,7 @@ func (h *Handler) handleAdmissionRequest(ctx context.Context, request *admission
 	if request.Operation != admissionv1.Create {
 		return allowed(string(request.UID))
 	}
-	
+
 	klog.InfoS("processing admission request",
 		"pod", pod.Name,
 		"namespace", request.Namespace,
@@ -107,13 +107,13 @@ func (h *Handler) handleAdmissionRequest(ctx context.Context, request *admission
 	}
 
 	return patchResponse(string(request.UID), jsonPatches)
-	
+
 }
 
 // allowed returns an AdmissionResponse allowing the request
 func allowed(uid string) *admissionv1.AdmissionResponse {
 	return &admissionv1.AdmissionResponse{
-		UID: types.UID(uid),
+		UID:     types.UID(uid),
 		Allowed: true,
 	}
 }
@@ -121,7 +121,7 @@ func allowed(uid string) *admissionv1.AdmissionResponse {
 // denied returns an AdmissionResponse denying the request
 func denied(uid string, message string) *admissionv1.AdmissionResponse {
 	return &admissionv1.AdmissionResponse{
-		UID: types.UID(uid),
+		UID:     types.UID(uid),
 		Allowed: false,
 		Result: &metav1.Status{
 			Message: message,
@@ -133,10 +133,10 @@ func denied(uid string, message string) *admissionv1.AdmissionResponse {
 func patchResponse(uid string, patch []byte) *admissionv1.AdmissionResponse {
 	pt := admissionv1.PatchTypeJSONPatch
 	return &admissionv1.AdmissionResponse{
-		UID: types.UID(uid),
-		Allowed: true,
+		UID:       types.UID(uid),
+		Allowed:   true,
 		PatchType: &pt,
-		Patch: patch,
+		Patch:     patch,
 	}
 }
 

@@ -61,7 +61,7 @@ type ServicePatchBuilder struct {
 // NewServicePatchBuilder creates a new builder for Service patches
 func NewServicePatchBuilder(hasAnnotations bool) *ServicePatchBuilder {
 	return &ServicePatchBuilder{
-		operations: []mutation.PatchOperation{},
+		operations:     []mutation.PatchOperation{},
 		hasAnnotations: hasAnnotations,
 	}
 }
@@ -69,8 +69,8 @@ func NewServicePatchBuilder(hasAnnotations bool) *ServicePatchBuilder {
 // ReplaceTargetPort replaces the targetPort at the given port index
 func (b *ServicePatchBuilder) ReplaceTargetPort(portIndex int, newPort int32) *ServicePatchBuilder {
 	b.operations = append(b.operations, mutation.PatchOperation{
-		Op: "add", //add overwrites. so this is safe if the targetport is missing
-		Path: fmt.Sprintf("/spec/ports/%d/targetPort", portIndex),
+		Op:    "add", //add overwrites. so this is safe if the targetport is missing
+		Path:  fmt.Sprintf("/spec/ports/%d/targetPort", portIndex),
 		Value: newPort,
 	})
 	return b
@@ -80,16 +80,16 @@ func (b *ServicePatchBuilder) ReplaceTargetPort(portIndex int, newPort int32) *S
 func (b *ServicePatchBuilder) AddAnnotation(key, value string) *ServicePatchBuilder {
 	if !b.hasAnnotations {
 		b.operations = append(b.operations, mutation.PatchOperation{
-			Op: "add",
-			Path: "/metadata/annotations",
+			Op:    "add",
+			Path:  "/metadata/annotations",
 			Value: map[string]string{},
 		})
 
 		b.hasAnnotations = true
 	}
 	b.operations = append(b.operations, mutation.PatchOperation{
-		Op: "add",
-		Path: "/metadata/annotations/" + escapeJSONPointer(key),
+		Op:    "add",
+		Path:  "/metadata/annotations/" + escapeJSONPointer(key),
 		Value: value,
 	})
 
@@ -117,17 +117,17 @@ func NewServiceMutator() *ServiceMutator {
 // Mutate inspects Service annotations and rewrites targetPort for specified ports
 //
 // TODO: Implement this function
-// 1. Check if KeyInjected annotation exists - if so, return empty patch (already mutated)
-// 2. Check if KeyRewritePorts annotation exists - if not, return empty patch (not opted in)
-// 3. Parse KeyRewritePorts into a list of port identifiers (names or numbers)
-// 4. Parse KeyProxyPort if set, otherwise use DefaultProxyPort
-// 5. For each port in the Service spec:
-//    a. Check if it matches any identifier in the rewrite list
-//    b. If yes:
-//       - Store original targetPort in annotation (OriginalTargetPortPrefix + portName)
-//       - Rewrite targetPort to proxy port
-// 6. Add KeyInjected annotation
-// 7. Return patch operations
+//  1. Check if KeyInjected annotation exists - if so, return empty patch (already mutated)
+//  2. Check if KeyRewritePorts annotation exists - if not, return empty patch (not opted in)
+//  3. Parse KeyRewritePorts into a list of port identifiers (names or numbers)
+//  4. Parse KeyProxyPort if set, otherwise use DefaultProxyPort
+//  5. For each port in the Service spec:
+//     a. Check if it matches any identifier in the rewrite list
+//     b. If yes:
+//     - Store original targetPort in annotation (OriginalTargetPortPrefix + portName)
+//     - Rewrite targetPort to proxy port
+//  6. Add KeyInjected annotation
+//  7. Return patch operations
 func (m *ServiceMutator) Mutate(ctx context.Context, svc *corev1.Service) ([]mutation.PatchOperation, error) {
 	if isAlreadyInjected(svc) {
 		return nil, nil
@@ -167,7 +167,7 @@ func ParseServiceAnnotations(annotations map[string]string) (*ServiceConfig, err
 		if err != nil {
 			return nil, err
 		}
-		if intPort <1 || intPort > 65535 {
+		if intPort < 1 || intPort > 65535 {
 			return nil, fmt.Errorf("%s value: %d not in valid port range", KeyProxyPort, intPort)
 		}
 		ret.ProxyPort = int32(intPort)
@@ -176,7 +176,7 @@ func ParseServiceAnnotations(annotations map[string]string) (*ServiceConfig, err
 	}
 
 	return ret, nil
-	
+
 }
 
 // shouldRewritePort checks if a ServicePort should have its targetPort rewritten
@@ -188,7 +188,7 @@ func shouldRewritePort(port corev1.ServicePort, rewritePorts []string) (bool, er
 			}
 		} else {
 			intPort, err := strconv.ParseInt(p, 10, 32)
-			if err != nil  {
+			if err != nil {
 				return false, err
 			}
 			if port.TargetPort == intstr.FromInt32(int32(intPort)) || port.Port == int32(intPort) {
@@ -221,11 +221,11 @@ func buildServicePatches(svc *corev1.Service, cfg *ServiceConfig) ([]mutation.Pa
 			portId := getPortIdentifier(p)
 			switch p.TargetPort.Type {
 			case intstr.Int:
-				builder.AddAnnotation(OriginalTargetPortPrefix + portId, strconv.Itoa(int(p.TargetPort.IntVal)))
+				builder.AddAnnotation(OriginalTargetPortPrefix+portId, strconv.Itoa(int(p.TargetPort.IntVal)))
 			case intstr.String:
-				builder.AddAnnotation(OriginalTargetPortPrefix + portId, p.TargetPort.StrVal)
+				builder.AddAnnotation(OriginalTargetPortPrefix+portId, p.TargetPort.StrVal)
 			default:
-				builder.AddAnnotation(OriginalTargetPortPrefix + portId, strconv.Itoa(int(p.Port)))
+				builder.AddAnnotation(OriginalTargetPortPrefix+portId, strconv.Itoa(int(p.Port)))
 			}
 			builder.ReplaceTargetPort(i, cfg.ProxyPort)
 		}

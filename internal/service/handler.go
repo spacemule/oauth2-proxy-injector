@@ -3,9 +3,9 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"net/http"
 	"fmt"
 	"io"
+	"net/http"
 
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -29,7 +29,7 @@ func NewHandler(mutator Mutator) *Handler {
 // HandleAdmission processes a Service admission request
 func (h *Handler) HandleAdmission(w http.ResponseWriter, r *http.Request) {
 	var review admissionv1.AdmissionReview
-	
+
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 		return
@@ -38,7 +38,7 @@ func (h *Handler) HandleAdmission(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unsupported Media Type", http.StatusUnsupportedMediaType)
 		return
 	}
-	
+
 	body, err := io.ReadAll(io.LimitReader(r.Body, 1*1024*1024))
 	if err != nil {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
@@ -64,12 +64,12 @@ func (h *Handler) HandleAdmission(w http.ResponseWriter, r *http.Request) {
 // handleAdmissionRequest processes a single admission request
 func (h *Handler) handleAdmissionRequest(ctx context.Context, request *admissionv1.AdmissionRequest) *admissionv1.AdmissionResponse {
 	svc := &corev1.Service{}
-	
+
 	if request.UID == "" {
 		return denied("", "UID not set")
 	}
 
-	if request.Kind.Group != "" || request.Kind.Version != "v1" || request.Kind.Kind != "Service"  {
+	if request.Kind.Group != "" || request.Kind.Version != "v1" || request.Kind.Kind != "Service" {
 		return allowed(string(request.UID))
 	}
 
@@ -80,7 +80,7 @@ func (h *Handler) handleAdmissionRequest(ctx context.Context, request *admission
 	if request.Operation != admissionv1.Create {
 		return allowed(string(request.UID))
 	}
-	
+
 	klog.InfoS("processing admission request",
 		"service", svc.Name,
 		"namespace", request.Namespace,
@@ -101,13 +101,13 @@ func (h *Handler) handleAdmissionRequest(ctx context.Context, request *admission
 	}
 
 	return patchResponse(string(request.UID), jsonPatches)
-	
+
 }
 
 // allowed returns an AdmissionResponse allowing the request
 func allowed(uid string) *admissionv1.AdmissionResponse {
 	return &admissionv1.AdmissionResponse{
-		UID: types.UID(uid),
+		UID:     types.UID(uid),
 		Allowed: true,
 	}
 }
@@ -115,7 +115,7 @@ func allowed(uid string) *admissionv1.AdmissionResponse {
 // denied returns an AdmissionResponse denying the request
 func denied(uid string, message string) *admissionv1.AdmissionResponse {
 	return &admissionv1.AdmissionResponse{
-		UID: types.UID(uid),
+		UID:     types.UID(uid),
 		Allowed: false,
 		Result: &metav1.Status{
 			Message: message,
@@ -128,10 +128,10 @@ func denied(uid string, message string) *admissionv1.AdmissionResponse {
 func patchResponse(uid string, patch []byte) *admissionv1.AdmissionResponse {
 	pt := admissionv1.PatchTypeJSONPatch
 	return &admissionv1.AdmissionResponse{
-		UID: types.UID(uid),
-		Allowed: true,
+		UID:       types.UID(uid),
+		Allowed:   true,
 		PatchType: &pt,
-		Patch: patch,
+		Patch:     patch,
 	}
 }
 

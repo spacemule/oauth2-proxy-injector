@@ -2,9 +2,9 @@ package config
 
 import (
 	"fmt"
-	"strings"
-	"net/url"
 	"github.com/spacemule/oauth2-proxy-injector/internal/annotation"
+	"net/url"
+	"strings"
 )
 
 // Merger defines the interface for merging ConfigMap settings with annotation overrides
@@ -31,10 +31,10 @@ func NewMerger() *ConfigMerger {
 // Merge combines base ConfigMap settings with per-pod annotation overrides
 func (m *ConfigMerger) Merge(base *ProxyConfig, overrides *annotation.Config) (*EffectiveConfig, error) {
 	cfg := &EffectiveConfig{
-		ConfigMapName: base.Name,
+		ConfigMapName:      base.Name,
 		ConfigMapNamespace: base.Namespace,
-		ProxyResources: base.ProxyResources,
-		ExtraArgs: base.ExtraArgs,
+		ProxyResources:     base.ProxyResources,
+		ExtraArgs:          base.ExtraArgs,
 	}
 
 	cfg.Provider = mergeString(base.Provider, overrides.Overrides.Provider)
@@ -43,7 +43,7 @@ func (m *ConfigMerger) Merge(base *ProxyConfig, overrides *annotation.Config) (*
 	cfg.CookieSecure = mergeBool(base.CookieSecure, overrides.Overrides.CookieSecure)
 	cfg.ProxyImage = mergeString(base.ProxyImage, overrides.Overrides.ProxyImage)
 	cfg.Upstream = mergeString("", overrides.Overrides.Upstream)
-	
+
 	cfg.ClientID = mergeString(base.ClientID, overrides.Overrides.ClientID)
 	cfg.Scope = mergeString(base.Scope, overrides.Overrides.Scope)
 	cfg.PKCEEnabled = mergeBool(base.PKCEEnabled, overrides.Overrides.PKCEEnabled)
@@ -79,7 +79,7 @@ func (m *ConfigMerger) Merge(base *ProxyConfig, overrides *annotation.Config) (*
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	
+
 	return cfg, nil
 }
 
@@ -150,20 +150,20 @@ func (cfg *EffectiveConfig) Validate() error {
 			}
 		}
 	}
-	if cfg.ProtectedPort == "" {
-		return fmt.Errorf("\nprotected-port unset")
+	if cfg.ProtectedPort == "" && cfg.Upstream == "" {
+		return fmt.Errorf("\nprotected-port or upstream must be set")
 	}
 	if cfg.UpstreamTLS != annotation.UpstreamNoTLS && cfg.UpstreamTLS != annotation.UpstreamTLSSecure && cfg.UpstreamTLS != annotation.UpstreamTLSInsecure {
 		return fmt.Errorf("\nupstream-tls invalid")
 	}
-	
+
 	return nil
 }
 
 // String returns a human-readable summary of the config for logging
 func (cfg *EffectiveConfig) String() string {
 	var builder strings.Builder
-	
+
 	builder.WriteString("EffectiveConfig{")
 	builder.WriteString(fmt.Sprintf("configmap=%s/%s, ", cfg.ConfigMapName, cfg.ConfigMapNamespace))
 	builder.WriteString(fmt.Sprintf("provider=%s, ", cfg.Provider))
@@ -178,8 +178,8 @@ func (cfg *EffectiveConfig) String() string {
 		builder.WriteString(fmt.Sprintf("cookie-secret-ref=%s:%s, ", cfg.CookieSecretRef.Name, cfg.CookieSecretRef.Key))
 	}
 	builder.WriteString(fmt.Sprintf("protected-port=%s, ", cfg.ProtectedPort))
-	builder.WriteString(fmt.Sprintf("allowed-groups=[%s], ", strings.Join(cfg.AllowedGroups,",")))
-	builder.WriteString(fmt.Sprintf("email-domains=[%s]", strings.Join(cfg.EmailDomains,",")))
+	builder.WriteString(fmt.Sprintf("allowed-groups=[%s], ", strings.Join(cfg.AllowedGroups, ",")))
+	builder.WriteString(fmt.Sprintf("email-domains=[%s]", strings.Join(cfg.EmailDomains, ",")))
 	if cfg.RedirectURL != "" {
 		builder.WriteString(fmt.Sprintf(", redirect-url=%s", cfg.RedirectURL))
 	}

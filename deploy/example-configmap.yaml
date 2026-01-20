@@ -157,8 +157,13 @@ metadata:
     # spacemule.net/oauth2-proxy.config: "my-custom-config"
 
     # ===== Port/Routing (annotation-only) =====
-    # Protected port name (default: "http")
+    # Protected port - EITHER this OR upstream is required
+    # Named port (e.g., "http"): Takes over the port from app container
+    # Numbered port (e.g., "8080"): Service mode, use with Service webhook
     spacemule.net/oauth2-proxy.protected-port: "http"
+    # Explicit upstream URL - alternative to protected-port
+    # When set, oauth2-proxy uses this URL directly instead of auto-calculating
+    # spacemule.net/oauth2-proxy.upstream: "http://127.0.0.1:8080"
     # Paths to skip authentication (comma-separated regex patterns)
     # Format: method=path_regex OR method!=path_regex. For all methods: path_regex
     spacemule.net/oauth2-proxy.ignore-paths: "/health,/metrics,GET=/ready"
@@ -167,6 +172,7 @@ metadata:
     # Skip login page when JWT bearer token is provided
     spacemule.net/oauth2-proxy.skip-jwt-bearer-tokens: "false"
     # Upstream TLS mode: "http" (default), "https", or "https-insecure"
+    # Only affects auto-calculated upstream (ignored when upstream is set explicitly)
     spacemule.net/oauth2-proxy.upstream-tls: "http"
 
     # ===== Identity Overrides (override ConfigMap values) =====
@@ -243,6 +249,25 @@ metadata:
 
     # Optional: override proxy port (default: 4180)
     # spacemule.net/oauth2-proxy.proxy-port: "4180"
+
+    # ===== Argo CD Compatibility =====
+    # The Service webhook mutates targetPort values, which causes Argo CD
+    # to show the Service as out-of-sync and revert changes on sync.
+    #
+    # To prevent this, add the following to your Argo CD Application spec:
+    #
+    #   spec:
+    #     ignoreDifferences:
+    #     - group: ""
+    #       kind: Service
+    #       jqPathExpressions:
+    #       - .spec.ports[].targetPort
+    #     syncPolicy:
+    #       syncOptions:
+    #       - RespectIgnoreDifferences=true
+    #
+    # The RespectIgnoreDifferences option is REQUIRED - without it, Argo CD
+    # will still overwrite the mutated targetPort values during sync.
 spec:
   selector:
     app: example-protected-app
@@ -282,8 +307,10 @@ metadata:
   annotations:
     spacemule.net/oauth2-proxy.enabled: "true"
     spacemule.net/oauth2-proxy.config: "media-oauth-config"
-    # Numbered port = service mode (app keeps its ports, no takeover)
+    # Option 1: Numbered port = service mode (app keeps its ports, no takeover)
     spacemule.net/oauth2-proxy.protected-port: "8888"
+    # Option 2: Explicit upstream (alternative to protected-port)
+    # spacemule.net/oauth2-proxy.upstream: "http://127.0.0.1:8888"
     # Skip auth for HLS segment requests (performance)
     spacemule.net/oauth2-proxy.ignore-paths: ".*\\.m3u8$,.*\\.ts$"
 spec:
@@ -310,6 +337,7 @@ metadata:
   annotations:
     # Only rewrite HLS port to go through oauth2-proxy
     spacemule.net/oauth2-proxy.rewrite-ports: "hls"
+    # See "Argo CD Compatibility" note above for handling out-of-sync warnings
 spec:
   selector:
     app: mediamtx

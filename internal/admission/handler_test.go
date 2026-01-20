@@ -42,15 +42,16 @@ func (m *mockMutator) Mutate(ctx context.Context, pod *corev1.Pod) ([]mutation.P
 // 1. Create a mock mutator that returns some patches
 // 2. Create a Handler with the mock
 // 3. Create a valid AdmissionReview request:
-//    - Proper headers (Content-Type: application/json)
-//    - Valid AdmissionReview body with a Pod
+//   - Proper headers (Content-Type: application/json)
+//   - Valid AdmissionReview body with a Pod
+//
 // 4. Use httptest.NewRecorder() to capture response
 // 5. Call handler.HandleAdmission()
 // 6. Assert:
-//    - Response status is 200
-//    - Response is valid AdmissionReview
-//    - Allowed is true
-//    - Patch is present and correct
+//   - Response status is 200
+//   - Response is valid AdmissionReview
+//   - Allowed is true
+//   - Patch is present and correct
 func TestHandleAdmission_ValidRequest(t *testing.T) {
 	panic("TODO: implement")
 }
@@ -88,9 +89,9 @@ func TestHandleAdmission_InvalidJSON(t *testing.T) {
 // 2. Create handler with the mock
 // 3. Send valid admission request
 // 4. Assert:
-//    - Response status is 200 (we return AdmissionReview, not HTTP error)
-//    - AdmissionReview.Response.Allowed is false
-//    - Error message is included
+//   - Response status is 200 (we return AdmissionReview, not HTTP error)
+//   - AdmissionReview.Response.Allowed is false
+//   - Error message is included
 func TestHandleAdmission_MutatorError(t *testing.T) {
 	panic("TODO: implement")
 }
@@ -101,8 +102,8 @@ func TestHandleAdmission_MutatorError(t *testing.T) {
 // 2. Create handler with the mock
 // 3. Send valid admission request
 // 4. Assert:
-//    - Response Allowed is true
-//    - No patch is present (or empty patch)
+//   - Response Allowed is true
+//   - No patch is present (or empty patch)
 func TestHandleAdmission_NoPatches(t *testing.T) {
 	panic("TODO: implement")
 }
@@ -112,8 +113,8 @@ func TestHandleAdmission_NoPatches(t *testing.T) {
 // 1. Create handler with mock mutator
 // 2. Send AdmissionReview for a Deployment (not Pod)
 // 3. Assert:
-//    - Allowed is true (we don't care about non-pods)
-//    - Mutator was NOT called
+//   - Allowed is true (we don't care about non-pods)
+//   - Mutator was NOT called
 func TestHandleAdmission_NonPodResource(t *testing.T) {
 	panic("TODO: implement")
 }

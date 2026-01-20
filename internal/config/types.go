@@ -261,7 +261,7 @@ const DefaultProxyImage = "quay.io/oauth2-proxy/oauth2-proxy:v7.14.2"
 // Used for annotation-only mode where no ConfigMap is specified
 func NewEmptyProxyConfig() *ProxyConfig {
 	return &ProxyConfig{
-		ProxyImage: DefaultProxyImage,
+		ProxyImage:   DefaultProxyImage,
 		CookieSecure: true,
 	}
 }
@@ -292,8 +292,8 @@ type EffectiveConfig struct {
 	CookieName      string
 
 	// ===== Authorization Settings (merged) =====
-	EmailDomains     []string
-	AllowedGroups    []string
+	EmailDomains  []string
+	AllowedGroups []string
 	// AllowedEmails    []string
 	WhitelistDomains []string
 

@@ -22,13 +22,12 @@ import (
 	"github.com/spacemule/oauth2-proxy-injector/internal/service"
 )
 
-
 type cmdConfig struct {
-    port             int
-    certFile         string
-    keyFile          string
-    configNamespace  string
-    defaultConfigMap string
+	port             int
+	certFile         string
+	keyFile          string
+	configNamespace  string
+	defaultConfigMap string
 }
 
 // main is the entrypoint for the webhook server
@@ -71,17 +70,17 @@ func parseFlags() cmdConfig {
 	c := cmdConfig{}
 	flag.IntVar(&c.port, "port", 8443, "HTTPS port to listen on")
 	flag.StringVar(&c.certFile, "cert-file", "", "path to TLS certificate")
-    flag.StringVar(&c.keyFile, "key-file", "", "path to TLS private key")
-    flag.StringVar(&c.configNamespace, "config-namespace", "", "namespace for ConfigMaps")
+	flag.StringVar(&c.keyFile, "key-file", "", "path to TLS private key")
+	flag.StringVar(&c.configNamespace, "config-namespace", "", "namespace for ConfigMaps")
 	flag.StringVar(&c.defaultConfigMap, "default-config", "", "default configuration ConfigMap (optional)")
 
-    flag.Parse()
+	flag.Parse()
 
-    if c.certFile == "" || c.keyFile == "" {
-        klog.Fatal("--cert-file and --key-file are required")
-    }
+	if c.certFile == "" || c.keyFile == "" {
+		klog.Fatal("--cert-file and --key-file are required")
+	}
 
-    return c
+	return c
 }
 
 // createKubernetesClient creates an in-cluster Kubernetes clientset
@@ -125,14 +124,14 @@ func setupServer(podHandler *admission.Handler, serviceHandler *service.Handler,
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return &http.Server{
-		Addr: fmt.Sprintf(":%d", port),
+		Addr:    fmt.Sprintf(":%d", port),
 		Handler: m,
 		TLSConfig: &tls.Config{
 			Certificates: []tls.Certificate{cert},
 		},
-		ReadTimeout: 10 * time.Second,
+		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 	}, nil
 }
@@ -145,10 +144,10 @@ func gracefulShutdown(server *http.Server) {
 	<-quit
 
 	klog.Info("shutting down server...")
-	
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	
+
 	err := server.Shutdown(ctx)
 	if err != nil {
 		klog.ErrorS(err, "server error")

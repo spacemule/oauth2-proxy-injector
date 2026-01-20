@@ -44,28 +44,28 @@ func (b *OAuth2ProxySidecarBuilder) Build(cfg *config.EffectiveConfig, portMappi
 	if !annotation.IsNamedPort(portName) {
 		portName = "oauth2-proxy"
 	}
-	
+
 	container := &corev1.Container{
-		Name: "oauth2-proxy",
+		Name:  "oauth2-proxy",
 		Image: cfg.ProxyImage,
-		Args: buildArgs(cfg, portMapping),
-		Env: buildEnvVars(cfg),
+		Args:  buildArgs(cfg, portMapping),
+		Env:   buildEnvVars(cfg),
 		Ports: []corev1.ContainerPort{
 			corev1.ContainerPort{
-				Name: portName,
+				Name:          portName,
 				ContainerPort: 4180,
-				HostPort: portMapping.HostPort,
-				Protocol: corev1.ProtocolTCP,
+				HostPort:      portMapping.HostPort,
+				Protocol:      corev1.ProtocolTCP,
 			},
 		},
-		LivenessProbe: buildProbe(4180, "/ping"),
+		LivenessProbe:  buildProbe(4180, "/ping"),
 		ReadinessProbe: buildProbe(4180, "/ready"),
 	}
 
 	if cfg.ProxyResources != nil {
 		container.Resources = *cfg.ProxyResources
 	}
-	
+
 	volumes := []corev1.Volume{}
 
 	return container, volumes
@@ -99,68 +99,68 @@ func buildArgs(cfg *config.EffectiveConfig, portMapping PortMapping) []string {
 			ret = append(ret, "--ssl-upstream-insecure-skip-verify=true")
 		}
 	}
-	
+
 	if !cfg.CookieSecure {
-		ret = append(ret, "--cookie-secure=false")  // default is true
+		ret = append(ret, "--cookie-secure=false") // default is true
 	}
 	if cfg.SkipProviderButton {
-		ret = append(ret, "--skip-provider-button=true")  // default is false
+		ret = append(ret, "--skip-provider-button=true") // default is false
 	}
 	if cfg.SkipJWTBearerTokens {
-		ret = append(ret, "--skip-jwt-bearer-tokens=true")  // default is false
+		ret = append(ret, "--skip-jwt-bearer-tokens=true") // default is false
 	}
 	if cfg.PassAccessToken {
-		ret = append(ret, "--pass-access-token=true")  // default is false
+		ret = append(ret, "--pass-access-token=true") // default is false
 	}
 	if cfg.SetXAuthRequest {
-		ret = append(ret, "--set-xauthrequest=true")  // default is false
+		ret = append(ret, "--set-xauthrequest=true") // default is false
 	}
 	if cfg.PassAuthorizationHeader {
-		ret = append(ret, "--pass-authorization-header=true")  // default is false
+		ret = append(ret, "--pass-authorization-header=true") // default is false
 	}
 
 	if cfg.PKCEEnabled {
 		ret = append(ret, "--code-challenge-method=S256")
 		ret = append(ret, "--client-secret-file=/dev/null")
 	}
-	
+
 	if cfg.Scope != "" {
-		ret = append(ret, "--scope=" + cfg.Scope)
+		ret = append(ret, "--scope="+cfg.Scope)
 	}
 	if cfg.OIDCGroupsClaim != "" {
-		ret = append(ret, "--oidc-groups-claim=" + cfg.OIDCGroupsClaim)
+		ret = append(ret, "--oidc-groups-claim="+cfg.OIDCGroupsClaim)
 	}
 	if cfg.RedirectURL != "" {
-		ret = append(ret, "--redirect-url=" + cfg.RedirectURL)
+		ret = append(ret, "--redirect-url="+cfg.RedirectURL)
 	}
 	if cfg.CookieName != "" {
-		ret = append(ret, "--cookie-name=" + cfg.CookieName)
+		ret = append(ret, "--cookie-name="+cfg.CookieName)
 	}
 
 	if len(cfg.ExtraJWTIssuers) > 0 {
-		ret = append(ret, "--extra-jwt-issuers=" + strings.Join(cfg.ExtraJWTIssuers, ","))
+		ret = append(ret, "--extra-jwt-issuers="+strings.Join(cfg.ExtraJWTIssuers, ","))
 	}
 
 	for _, d := range cfg.EmailDomains {
-		ret = append(ret, "--email-domain=" + d)
+		ret = append(ret, "--email-domain="+d)
 	}
 	for _, g := range cfg.AllowedGroups {
-		ret = append(ret, "--allowed-group=" + g)
+		ret = append(ret, "--allowed-group="+g)
 	}
 	for _, p := range cfg.IgnorePaths {
-		ret = append(ret, "--skip-auth-route=" + p)
+		ret = append(ret, "--skip-auth-route="+p)
 	}
 	for _, p := range cfg.APIPaths {
-		ret = append(ret, "--api-route=" + p)
+		ret = append(ret, "--api-route="+p)
 	}
 	// for _, d := range cfg.AllowedEmails {
 	// 	ret = append(ret, "--email-domain=" + d)
 	// }
 	for _, p := range cfg.CookieDomains {
-		ret = append(ret, "--cookie-domain=" + p)
+		ret = append(ret, "--cookie-domain="+p)
 	}
 	for _, p := range cfg.WhitelistDomains {
-		ret = append(ret, "--whitelist-domain=" + p)
+		ret = append(ret, "--whitelist-domain="+p)
 	}
 	for _, arg := range cfg.ExtraArgs {
 		ret = append(ret, arg)
@@ -211,8 +211,8 @@ func buildProbe(port int32, path string) *corev1.Probe {
 			},
 		},
 		InitialDelaySeconds: 5,
-		PeriodSeconds: 10,
-		TimeoutSeconds: 2,
+		PeriodSeconds:       10,
+		TimeoutSeconds:      2,
 	}
 }
 
@@ -226,8 +226,8 @@ func CalculatePortMapping(
 			if p.Name == cfg.ProtectedPort {
 				return PortMapping{
 					ProxyPort: p.ContainerPort,
-					HostPort: p.HostPort,
-					TLSMode: cfg.UpstreamTLS,
+					HostPort:  p.HostPort,
+					TLSMode:   cfg.UpstreamTLS,
 				}, nil
 			}
 		}
@@ -240,8 +240,8 @@ func CalculatePortMapping(
 			if p.ContainerPort == int32(portNum) {
 				return PortMapping{
 					ProxyPort: p.ContainerPort,
-					HostPort: p.HostPort,
-					TLSMode: cfg.UpstreamTLS,
+					HostPort:  p.HostPort,
+					TLSMode:   cfg.UpstreamTLS,
 				}, nil
 			}
 		}

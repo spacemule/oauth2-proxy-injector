@@ -30,7 +30,7 @@ type ConfigMapLoader struct {
 // NewLoader creates a new ConfigMapLoader
 func NewLoader(client kubernetes.Interface, defaultNamespace string) *ConfigMapLoader {
 	return &ConfigMapLoader{
-		client: client,
+		client:           client,
 		defaultNamespace: defaultNamespace,
 	}
 }
@@ -50,19 +50,19 @@ func (l *ConfigMapLoader) Load(ctx context.Context, name, namespace string) (*Pr
 	if err != nil {
 		return nil, err
 	}
-	
-	cfg, err :=parseConfigMap(cm.Data, name, n)
+
+	cfg, err := parseConfigMap(cm.Data, name, n)
 	if err != nil {
 		return nil, err
 	}
 
-	return cfg, nil	
+	return cfg, nil
 }
 
 // parseConfigMap converts ConfigMap data to ProxyConfig
 func parseConfigMap(data map[string]string, name, namespace string) (*ProxyConfig, error) {
 	cfg := &ProxyConfig{
-		Name: name,
+		Name:      name,
 		Namespace: namespace,
 	}
 	var err error
@@ -205,7 +205,6 @@ func parseConfigMap(data map[string]string, name, namespace string) (*ProxyConfi
 		}
 	}
 
-	
 	return cfg, nil
 }
 
@@ -254,12 +253,12 @@ func parseBool(value string, defaultValue bool) (bool, error) {
 // splitAndTrim splits a string by separator and trims whitespace from each element
 func splitAndTrim(s, sep string) []string {
 	ret := []string{}
-	
+
 	splits := strings.Split(s, sep)
 	for _, split := range splits {
 		if trimmed := strings.TrimSpace(split); trimmed != "" {
 			ret = append(ret, trimmed)
-		} 
+		}
 	}
 
 	return ret
