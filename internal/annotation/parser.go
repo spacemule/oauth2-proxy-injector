@@ -350,7 +350,6 @@ func NewParser() *AnnotationParser {
 func (p *AnnotationParser) Parse(annotations map[string]string) (*Config, error) {
 	var (
 		cfg *Config = &Config{
-			ProtectedPort:       "http",
 			IgnorePaths:         []string{},
 			APIPaths:            []string{},
 			SkipJWTBearerTokens: false,
