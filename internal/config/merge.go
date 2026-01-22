@@ -35,6 +35,7 @@ func (m *ConfigMerger) Merge(base *ProxyConfig, overrides *annotation.Config) (*
 		ConfigMapNamespace: base.Namespace,
 		ProxyResources:     base.ProxyResources,
 		ExtraArgs:          base.ExtraArgs,
+		
 	}
 
 	cfg.Provider = mergeString(base.Provider, overrides.Overrides.Provider)
@@ -70,6 +71,7 @@ func (m *ConfigMerger) Merge(base *ProxyConfig, overrides *annotation.Config) (*
 	// cfg.AllowedEmails = mergeStringSlice(base.AllowedEmails, overrides.Overrides.AllowedEmails, overrides.Overrides.AllowedEmailsSet)
 	cfg.ExtraJWTIssuers = mergeStringSlice(base.ExtraJWTIssuers, overrides.Overrides.ExtraJWTIssuers, overrides.Overrides.ExtraJWTIssuersSet)
 
+	cfg.BlockDirectAccess = overrides.BlockDirectAccess
 	cfg.ProtectedPort = overrides.ProtectedPort
 	cfg.IgnorePaths = overrides.IgnorePaths
 	cfg.APIPaths = overrides.APIPaths

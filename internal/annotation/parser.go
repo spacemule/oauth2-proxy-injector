@@ -34,6 +34,13 @@ const (
 	// Value: "true" (set automatically, do not set manually)
 	KeyInjected = AnnotationPrefix + "injected"
 
+	// KeyBlockDirectAccess optionally disables direct access to the running service at the pod's IP
+	// If enabled, an initContainer is added to the pod to run iptables and block access to the 
+	// protected container's protected port.
+	// Value: "true" or "false" (default)
+	KeyBlockDirectAccess = AnnotationPrefix + "block-direct-access"
+	
+
 	// ===== Port/Routing Annotations (annotation-only) =====
 
 	// KeyProtectedPort specifies which container port should be protected
@@ -208,6 +215,9 @@ type Config struct {
 	// ConfigMapName is the name of the ConfigMap containing oauth2-proxy settings
 	ConfigMapName string
 
+	// BlockDirectAccess indicates whether or not to inject an iptables initContainer to protect the service
+	BlockDirectAccess bool
+
 	// ===== Port/Routing Settings (annotation-only) =====
 
 	// ProtectedPort is the name of the port that should be proxied
@@ -366,6 +376,11 @@ func (p *AnnotationParser) Parse(annotations map[string]string) (*Config, error)
 	// ConfigMapName is optional - if not set, mutator will use webhook's default
 	if v, ok := annotations[KeyConfig]; ok {
 		cfg.ConfigMapName = v
+	}
+
+	cfg.BlockDirectAccess = false
+	if annotations[KeyBlockDirectAccess] == "true" {
+		cfg.BlockDirectAccess = true
 	}
 
 	if v, ok := annotations[KeyProvider]; ok {

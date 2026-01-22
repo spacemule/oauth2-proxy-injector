@@ -312,6 +312,7 @@ type EffectiveConfig struct {
 	// ===== Annotation-Only Settings =====
 	// These come only from annotations, not ConfigMap
 
+	BlockDirectAccess   bool
 	ProtectedPort       string
 	IgnorePaths         []string
 	APIPaths            []string

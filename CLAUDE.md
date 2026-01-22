@@ -398,6 +398,241 @@ This way, HLS traffic goes through oauth2-proxy, while other ports remain direct
 - `/mutate` or `/mutate-pod` - Pod mutation (existing)
 - `/mutate-service` - Service mutation (new)
 
+## Unimplemented oauth2-proxy Configuration Flags
+
+The following oauth2-proxy configuration options are not yet supported via annotations or ConfigMap. These can be added as needed based on use cases:
+
+### Server & TLS Configuration
+- `--https-address` - HTTPS bind address
+- `--tls-cert-file` / `--tls-key-file` - TLS certificate/key paths
+- `--tls-min-version` - Minimum TLS version
+- `--tls-cipher-suites` - Allowed cipher suites
+- `--metrics-address` - Prometheus metrics endpoint
+- `--metrics-secure-address` - HTTPS metrics endpoint
+- `--metrics-tls-cert-file` / `--metrics-tls-key-file` - Metrics TLS cert/key
+
+### Request Handling & Security
+- `--reverse-proxy` - Enable reverse proxy mode
+- `--real-client-ip-header` - Header to read real client IP from (e.g., X-Forwarded-For)
+- `--trusted-ips` - List of trusted IPs for X-Forwarded-For
+- `--force-https` - Force HTTPS redirect
+- `--skip-auth-preflight` - Skip authentication for CORS preflight requests
+- `--force-json-errors` - Return errors as JSON instead of HTML
+
+### Authentication & Authorization (Advanced)
+- `--skip-auth-regex` - Regex patterns to skip authentication (deprecated, use skip-auth-routes)
+- `--skip-auth-routes` - Routes to skip auth (more flexible than ignore-paths)
+- `--authenticated-emails-file` - File with allowed email addresses
+- `--htpasswd-file` - Basic auth password file (bcrypt required)
+- `--htpasswd-user-group` - Group to assign for htpasswd users
+- `--display-htpasswd-form` - Display username/password login form
+
+### Session Storage (Advanced)
+- `--session-store-type` - "cookie" (default) or "redis"
+- `--session-cookie-minimal` - Strip OAuth tokens from cookie (store server-side)
+
+#### Redis Session Store
+- `--redis-connection-url` - Redis connection URL
+- `--redis-username` / `--redis-password` - Redis credentials
+- `--redis-use-sentinel` - Enable Redis Sentinel
+- `--redis-sentinel-master-name` - Sentinel master name
+- `--redis-sentinel-connection-urls` - Sentinel addresses
+- `--redis-use-cluster` - Enable Redis Cluster mode
+- `--redis-cluster-connection-urls` - Cluster node addresses
+- `--redis-ca-path` - CA certificate for Redis TLS
+- `--redis-insecure-skip-tls-verify` - Skip Redis TLS verification
+
+### Cookie Settings (Advanced)
+- `--cookie-path` - Cookie path (default: /)
+- `--cookie-samesite` - SameSite attribute (lax, strict, none)
+- `--cookie-httponly` - HTTPOnly flag (default: true)
+- `--cookie-csrf-per-request` - Generate new CSRF token per request
+- `--cookie-csrf-expire` - CSRF token expiration
+
+### Logging (Advanced)
+- `--logging-filename` - Log file path
+- `--logging-max-size` - Max log file size (MB)
+- `--logging-max-age` - Max log retention (days)
+- `--logging-max-backups` - Max log file backups
+- `--logging-local-time` - Use local time in logs
+- `--logging-compress` - Compress rotated logs
+- `--standard-logging` - Enable standard logs
+- `--standard-logging-format` - Standard log format
+- `--request-logging` - Enable request logs
+- `--request-logging-format` - Request log format
+- `--auth-logging` - Enable authentication logs
+- `--auth-logging-format` - Auth log format
+- `--errors-to-info-log` - Log errors as info
+- `--exclude-logging-path` - Paths to exclude from logs
+- `--silence-ping-logging` - Silence ping endpoint logs
+- `--request-id-header` - Request ID header name
+
+### Upstream Configuration (Advanced)
+- Multiple upstreams with path-based routing (requires alpha config)
+- Per-upstream TLS settings
+- Static file serving
+- WebSocket proxying control
+- Upstream timeout/flush interval
+- Unix socket upstreams
+
+### Header Management (Advanced)
+- `--pass-host-header` - Forward Host header (default: true)
+- `--pass-user-headers` - Forward X-Forwarded-User/Email
+- `--pass-basic-auth` - Forward HTTP Basic Auth
+- `--prefer-email-to-user` - Prefer email over username in headers
+- `--basic-auth-password` - Password for Basic Auth header
+- `--skip-auth-strip-headers` - Skip stripping auth headers on skip-auth routes
+
+### Provider-Specific Options
+Each provider (Azure, GitHub, Google, GitLab, Keycloak, etc.) has specific configuration options not yet exposed:
+- **Azure/Entra**: Tenant, graph API settings, user/group filtering
+- **GitHub**: Organization restrictions, team requirements
+- **Google**: Admin email, service account, group membership
+- **GitLab**: Project/group restrictions
+- **Keycloak**: Realm-specific settings
+- **OIDC**: Issuer discovery, JWKS settings, audience claims
+
+### Alpha Configuration Support
+Alpha config provides structured YAML configuration with advanced features:
+- Multiple upstream routing with path-based selection
+- Header injection (request/response) from claims or secrets
+- Nested provider configuration
+- Fine-grained TLS controls per upstream
+
+**Not yet implemented - see "Alpha Configuration" section below**
+
+## Alpha Configuration (Proposed Feature)
+
+The oauth2-proxy alpha configuration format provides a more powerful, structured way to configure complex scenarios that don't map well to flat annotations.
+
+### Use Cases for Alpha Config
+
+1. **Multiple upstream routing**: Route different paths to different backends
+2. **Header injection**: Add custom headers based on session claims
+3. **Complex provider config**: Provider-specific nested options
+4. **Fine-grained TLS**: Per-upstream TLS settings
+
+### Implementation Approach (Hybrid)
+
+Support both simple annotations (current) AND alpha config for advanced use cases:
+
+```yaml
+metadata:
+  annotations:
+    # Simple case: use current annotation-based config
+    spacemule.net/oauth2-proxy.enabled: "true"
+    spacemule.net/oauth2-proxy.provider: "oidc"
+    spacemule.net/oauth2-proxy.client-id: "my-client"
+
+    # Advanced case: alpha config takes precedence/augments
+    spacemule.net/oauth2-proxy.alpha-config: |-
+      injectRequestHeaders:
+        - name: X-Auth-User
+          values:
+            - claimSource:
+                claim: preferred_username
+        - name: X-Auth-Groups
+          values:
+            - claimSource:
+                claim: groups
+      injectResponseHeaders:
+        - name: X-Application
+          values:
+            - secretSource:
+                value: "bXktYXBwLW5hbWU="  # base64: my-app-name
+```
+
+### Technical Design
+
+**Merge Strategy:**
+1. Start with ConfigMap settings (if `config` annotation references one)
+2. Apply simple annotations (current implementation)
+3. If `alpha-config` annotation exists, parse YAML and merge/override
+4. Generate final alpha config YAML
+5. Create a ConfigMap with the merged config
+6. Mount ConfigMap into sidecar at `/etc/oauth2-proxy/alpha-config.yaml`
+7. Pass `--alpha-config=/etc/oauth2-proxy/alpha-config.yaml` to oauth2-proxy
+
+**ConfigMap Management:**
+- Name: `<pod-name>-oauth2-proxy-<hash>` (hash of config content)
+- Namespace: Same as pod
+- OwnerReference: Set to the pod (auto-cleanup when pod deleted)
+- Label: `spacemule.net/oauth2-proxy-config: "true"` (for discovery/cleanup)
+
+**Alpha Config Structure:**
+```yaml
+# Generated and mounted as ConfigMap
+upstreams:
+  - id: main
+    uri: http://127.0.0.1:8080
+    path: /
+    insecureSkipTLSVerify: false  # from upstream-tls annotation
+
+providers:
+  - id: main
+    provider: oidc
+    clientID: my-client
+    clientSecret: ${CLIENT_SECRET}  # from env var injected from secret
+    oidcConfig:
+      issuerURL: https://auth.example.com
+      audienceClaims:
+        - aud
+      groupsClaim: groups
+
+server:
+  bindAddress: http://0.0.0.0:4180
+
+injectRequestHeaders:
+  - name: X-Auth-Request-User
+    values:
+      - claimSource:
+          claim: preferred_username
+  - name: X-Auth-Request-Email
+    values:
+      - claimSource:
+          claim: email
+  - name: X-Auth-Request-Groups
+    values:
+      - claimSource:
+          claim: groups
+
+cookie:
+  name: _oauth2_proxy
+  secret: ${COOKIE_SECRET}  # from env var
+  domains:
+    - .example.com
+  secure: true
+  httpOnly: true
+  expire: 168h
+```
+
+**Environment Variable Injection:**
+- Secrets (client-secret, cookie-secret) are mounted as env vars
+- Alpha config references them as `${VAR_NAME}`
+- oauth2-proxy expands them at runtime
+
+**Validation:**
+- Parse YAML at admission time (fail fast if invalid)
+- Use oauth2-proxy's Go structs to validate structure
+- Check for conflicts between annotations and alpha config (warn or error)
+
+**Migration Path:**
+- Phase 1: Keep current annotation-based config working
+- Phase 2: Add alpha-config annotation support
+- Phase 3: Gradually migrate complex use cases to alpha config
+- **No breaking changes**: Simple annotations continue to work
+
+### Implementation TODO
+
+- [ ] Add `spacemule.net/oauth2-proxy.alpha-config` annotation parsing
+- [ ] Implement YAML merging logic (annotations → alpha config struct)
+- [ ] Create ConfigMap with generated alpha config
+- [ ] Mount ConfigMap as volume in sidecar
+- [ ] Update sidecar args to use `--alpha-config` flag
+- [ ] Add validation for alpha config YAML structure
+- [ ] Document alpha config examples for common use cases
+- [ ] Handle ConfigMap lifecycle (create, update, cleanup via ownerRef)
+
 ## Future Features
 
 ### iptables Init Container for Port Blocking
