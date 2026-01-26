@@ -1,4 +1,4 @@
-{{- if .Values.oauth2Proxy.enabled }}
+{{- if .Values.defaultProxyConfig.enabled }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -9,78 +9,78 @@ metadata:
     app.kubernetes.io/component: oauth2-proxy-config
 data:
   # ===== Provider Settings =====
-  provider: {{ .Values.oauth2Proxy.provider | quote }}
-  {{- with .Values.oauth2Proxy.oidcIssuerUrl }}
+  provider: {{ .Values.defaultProxyConfig.provider | quote }}
+  {{- with .Values.defaultProxyConfig.oidcIssuerUrl }}
   oidc-issuer-url: {{ . | quote }}
   {{- end }}
-  {{- with .Values.oauth2Proxy.oidcGroupsClaim }}
+  {{- with .Values.defaultProxyConfig.oidcGroupsClaim }}
   oidc-groups-claim: {{ . | quote }}
   {{- end }}
-  {{- with .Values.oauth2Proxy.scope }}
+  {{- with .Values.defaultProxyConfig.scope }}
   scope: {{ . | quote }}
   {{- end }}
 
   # ===== Identity Settings =====
-  {{- with .Values.oauth2Proxy.clientId }}
+  {{- with .Values.defaultProxyConfig.clientId }}
   client-id: {{ . | quote }}
   {{- end }}
-  {{- with .Values.oauth2Proxy.clientSecretRef }}
+  {{- with .Values.defaultProxyConfig.clientSecretRef }}
   client-secret-ref: {{ . | quote }}
   {{- end }}
-  {{- if .Values.oauth2Proxy.pkceEnabled }}
+  {{- if .Values.defaultProxyConfig.pkceEnabled }}
   pkce-enabled: "true"
   {{- end }}
 
   # ===== Cookie Settings =====
-  {{- with .Values.oauth2Proxy.cookieSecretRef }}
+  {{- with .Values.defaultProxyConfig.cookieSecretRef }}
   cookie-secret-ref: {{ . | quote }}
   {{- end }}
-  {{- with .Values.oauth2Proxy.cookieDomains }}
+  {{- with .Values.defaultProxyConfig.cookieDomains }}
   cookie-domains: {{ . | quote }}
   {{- end }}
-  {{- with .Values.oauth2Proxy.cookieName }}
+  {{- with .Values.defaultProxyConfig.cookieName }}
   cookie-name: {{ . | quote }}
   {{- end }}
-  cookie-secure: {{ .Values.oauth2Proxy.cookieSecure | quote }}
+  cookie-secure: {{ .Values.defaultProxyConfig.cookieSecure | quote }}
 
   # ===== Authorization Settings =====
-  {{- with .Values.oauth2Proxy.emailDomains }}
+  {{- with .Values.defaultProxyConfig.emailDomains }}
   email-domains: {{ . | quote }}
   {{- end }}
-  {{- with .Values.oauth2Proxy.allowedGroups }}
+  {{- with .Values.defaultProxyConfig.allowedGroups }}
   allowed-groups: {{ . | quote }}
   {{- end }}
-  {{- with .Values.oauth2Proxy.whitelistDomains }}
+  {{- with .Values.defaultProxyConfig.whitelistDomains }}
   whitelist-domains: {{ . | quote }}
   {{- end }}
 
   # ===== Routing Settings =====
-  {{- with .Values.oauth2Proxy.redirectUrl }}
+  {{- with .Values.defaultProxyConfig.redirectUrl }}
   redirect-url: {{ . | quote }}
   {{- end }}
-  {{- with .Values.oauth2Proxy.extraJwtIssuers }}
+  {{- with .Values.defaultProxyConfig.extraJwtIssuers }}
   extra-jwt-issuers: {{ . | quote }}
   {{- end }}
 
   # ===== Header/Token Passing Settings =====
-  {{- if .Values.oauth2Proxy.passAccessToken }}
+  {{- if .Values.defaultProxyConfig.passAccessToken }}
   pass-access-token: "true"
   {{- end }}
-  {{- if .Values.oauth2Proxy.setXAuthRequest }}
+  {{- if .Values.defaultProxyConfig.setXAuthRequest }}
   set-xauthrequest: "true"
   {{- end }}
-  {{- if .Values.oauth2Proxy.passAuthorizationHeader }}
+  {{- if .Values.defaultProxyConfig.passAuthorizationHeader }}
   pass-authorization-header: "true"
   {{- end }}
 
   # ===== Behavior Settings =====
-  {{- if .Values.oauth2Proxy.skipProviderButton }}
+  {{- if .Values.defaultProxyConfig.skipProviderButton }}
   skip-provider-button: "true"
   {{- end }}
 
   # ===== Container Settings =====
-  proxy-image: {{ .Values.oauth2Proxy.proxyImage | quote }}
-  {{- with .Values.oauth2Proxy.extraArgs }}
+  proxy-image: {{ .Values.defaultProxyConfig.proxyImage | quote }}
+  {{- with .Values.defaultProxyConfig.extraArgs }}
   extra-args: |
     {{- . | nindent 4 }}
   {{- end }}

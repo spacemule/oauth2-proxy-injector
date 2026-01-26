@@ -9,9 +9,9 @@ replicaCount: 1
 image:
   repository: git.spacemule.net/spacemule.net/oauth2-proxy-injector
   # This sets the pull policy for images.
-  pullPolicy: Always
+  pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
-  tag: 190df826b777ee50a580e7efb35cc630442873f6
+  tag: d7ccd82973a4ea581a47ec2bcb5d03943b8fcc63
 
 # Init container image for iptables-based port blocking
 # Used when spacemule.net/oauth2-proxy.block-direct-access: "true" annotation is set
@@ -54,30 +54,30 @@ config:
   # configNamespace: ""
 
 # oauth2-proxy default ConfigMap settings
-# Set oauth2Proxy.enabled=true to create the default ConfigMap
-oauth2Proxy:
+# Set defaultProxyConfig.enabled=true to create the default ConfigMap
+defaultProxyConfig:
   # Create the default oauth2-proxy ConfigMap
   enabled: false
 
   # ===== Provider Settings =====
-  provider: "oidc"
-  oidcIssuerUrl: ""  # e.g., "https://auth.example.com/realms/myrealm"
+  provider: oidc
+  oidcIssuerUrl: ''  # e.g., "https://auth.example.com/realms/myrealm"
   # oidcGroupsClaim: "groups"
   # scope: "openid email profile"
 
   # ===== Identity Settings =====
-  clientId: ""  # e.g., "my-application"
-  clientSecretRef: ""  # e.g., "oauth2-secrets:client-secret"
+  clientId: ''  # e.g., "my-application"
+  clientSecretRef: ''  # e.g., "oauth2-secrets:client-secret"
   pkceEnabled: false
 
   # ===== Cookie Settings =====
-  cookieSecretRef: ""  # e.g., "oauth2-secrets:cookie-secret"
+  cookieSecretRef: ''  # e.g., "oauth2-secrets:cookie-secret"
   # cookieDomains: ".example.com"
   # cookieName: "_oauth2_proxy"
   cookieSecure: true
 
   # ===== Authorization Settings =====
-  emailDomains: "*"  # e.g., "example.com,corp.example.com"
+  emailDomains: '*'  # e.g., "example.com,corp.example.com"
   # allowedGroups: ""  # e.g., "developers,admins"
   # whitelistDomains: ""  # e.g., ".example.com"
 
@@ -94,7 +94,7 @@ oauth2Proxy:
   skipProviderButton: true
 
   # ===== Container Settings =====
-  proxyImage: "quay.io/oauth2-proxy/oauth2-proxy:v7.5.1"
+  proxyImage: quay.io/oauth2-proxy/oauth2-proxy:v7.14.2
   # extraArgs: |
   #   --pass-user-headers=true
   #   --reverse-proxy=true
@@ -208,3 +208,10 @@ nodeSelector: {}
 tolerations: []
 
 affinity: {}
+
+# PodDisruptionBudget configuration
+# For more information: https://kubernetes.io/docs/tasks/run-application/configure-pdb/
+podDisruptionBudget:
+  enabled: false
+  # minAvailable: 1
+  # maxUnavailable: 1
