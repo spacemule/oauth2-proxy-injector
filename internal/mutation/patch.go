@@ -68,13 +68,16 @@ type JSONPatchBuilder struct {
 	hasLabels bool
 	// hasVolumes tracks if the pod already has volumes
 	hasVolumes bool
+	// hasInitContainers tracks if the pod already has initContainers
+	hasInitContainers bool
 }
 
-func NewPatchBuilder(hasAnnotations, hasLabels, hasVolumes bool) *JSONPatchBuilder {
+func NewPatchBuilder(hasAnnotations, hasLabels, hasVolumes, hasInitContainers bool) *JSONPatchBuilder {
 	return &JSONPatchBuilder{
 		hasAnnotations: hasAnnotations,
 		hasLabels:      hasLabels,
 		hasVolumes:     hasVolumes,
+		hasInitContainers: hasInitContainers,
 	}
 }
 
@@ -88,6 +91,14 @@ func (b *JSONPatchBuilder) AddContainer(container interface{}) PatchBuilder {
 }
 
 func (b *JSONPatchBuilder) AddInitContainer(container interface{}) PatchBuilder {
+	if !b.hasInitContainers {
+		b.operations = append(b.operations, PatchOperation{
+			Op:    "add",
+			Path:  "/spec/initContainers",
+			Value: []interface{}{},
+		})
+		b.hasInitContainers = true
+	}
 	b.operations = append(b.operations, PatchOperation{
 		Op:    "add",
 		Path:  "/spec/initContainers/-",

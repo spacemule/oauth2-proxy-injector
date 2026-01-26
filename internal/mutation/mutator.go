@@ -127,8 +127,10 @@ func (m *PodMutator) Mutate(ctx context.Context, pod *corev1.Pod) ([]PatchOperat
 	initContainer := m.initContainerBuilder.Build(effectiveCfg, mapping)
 	container, volumes := m.sidecarBuilder.Build(effectiveCfg, mapping)
 
-	patchBuilder := NewPatchBuilder(hasExistingAnnotations(pod), hasExistingLabels(pod), hasExistingVolumes(pod))
-	patchBuilder.AddInitContainer(initContainer)
+	patchBuilder := NewPatchBuilder(hasExistingAnnotations(pod), hasExistingLabels(pod), hasExistingVolumes(pod), hasExistingInitContainers(pod))
+	if initContainer != nil {
+		patchBuilder.AddInitContainer(initContainer)
+	}
 	patchBuilder.AddContainer(container)
 
 	if annotation.IsNamedPort(effectiveCfg.ProtectedPort) {
@@ -294,6 +296,11 @@ func hasExistingLabels(pod *corev1.Pod) bool {
 // hasExistingVolumes checks if the pod has any volumes
 func hasExistingVolumes(pod *corev1.Pod) bool {
 	return len(pod.Spec.Volumes) > 0
+}
+
+// hasExistingInitContainers checks if the pod has any init containers
+func hasExistingInitContainers(pod *corev1.Pod) bool {
+	return len(pod.Spec.InitContainers) > 0
 }
 
 // rewriteProbesForBlockedAccess finds all probes that target the protected port
