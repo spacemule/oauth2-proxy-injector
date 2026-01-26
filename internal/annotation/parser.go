@@ -180,6 +180,18 @@ const (
 	// Use case: Testing new versions, using custom builds
 	KeyProxyImage = AnnotationPrefix + "proxy-image"
 
+	// KeyPingPath overrides the oauth2-proxy ping/healthz endpoint path
+	// Value: path (e.g., "/oauth2/ping")
+	// Default: "/ping" (oauth2-proxy default)
+	// Use case: When app's health check path conflicts with oauth2-proxy's default
+	KeyPingPath = AnnotationPrefix + "ping-path"
+
+	// KeyReadyPath overrides the oauth2-proxy ready endpoint path
+	// Value: path (e.g., "/oauth2/ready")
+	// Default: "/ready" (oauth2-proxy default)
+	// Use case: When app's health check path conflicts with oauth2-proxy's default
+	KeyReadyPath = AnnotationPrefix + "ready-path"
+
 	// ===== Upstream Override =====
 
 	// KeyUpstream overrides the default upstream URL
@@ -235,6 +247,14 @@ type Config struct {
 
 	// UpstreamTLS is the TLS mode for upstream connections
 	UpstreamTLS UpstreamTLSMode
+
+	// PingPath is the path for oauth2-proxy's ping/healthz endpoint
+	// Default: "/ping" (oauth2-proxy default)
+	PingPath string
+
+	// ReadyPath is the path for oauth2-proxy's ready endpoint
+	// Default: "/ready" (oauth2-proxy default)
+	ReadyPath string
 
 	// ===== ConfigMap Overrides =====
 	// These fields override the corresponding ConfigMap values when set.
@@ -401,6 +421,14 @@ func (p *AnnotationParser) Parse(annotations map[string]string) (*Config, error)
 	if v, ok := annotations[KeyProxyImage]; ok {
 		s := strings.TrimSpace(v)
 		cfg.Overrides.ProxyImage = &s
+	}
+
+	if v, ok := annotations[KeyPingPath]; ok {
+		cfg.PingPath = strings.TrimSpace(v)
+	}
+
+	if v, ok := annotations[KeyReadyPath]; ok {
+		cfg.ReadyPath = strings.TrimSpace(v)
 	}
 
 	if v, ok := annotations[KeyUpstream]; ok {

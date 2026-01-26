@@ -3,6 +3,7 @@ package mutation
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -26,11 +27,12 @@ type Mutator interface {
 
 // PodMutator implements Mutator for oauth2-proxy sidecar injection
 type PodMutator struct {
-	annotationParser annotation.Parser
-	configLoader     config.Loader
-	sidecarBuilder   SidecarBuilder
-	configMerger     config.Merger
-	knativeDetector  KnativeDetector
+	annotationParser 		annotation.Parser
+	configLoader     		config.Loader
+	sidecarBuilder   		SidecarBuilder
+	configMerger     		config.Merger
+	knativeDetector  		KnativeDetector
+	initContainerBuilder 	InitContainerBuilder
 
 	// defaultConfigMap is the name of the default ConfigMap in the webhook's namespace
 	// Used when pods don't specify spacemule.net/oauth2-proxy.config annotation
@@ -57,6 +59,7 @@ func NewPodMutator(
 	builder SidecarBuilder,
 	merger config.Merger,
 	knativeDetector KnativeDetector,
+	initContainerBuilder InitContainerBuilder,
 	defaultConfigMap string,
 	defaultConfigNamespace string,
 ) *PodMutator {
@@ -66,6 +69,7 @@ func NewPodMutator(
 		sidecarBuilder:         builder,
 		configMerger:           merger,
 		knativeDetector:        knativeDetector,
+		initContainerBuilder:   initContainerBuilder,
 		defaultConfigMap:       defaultConfigMap,
 		defaultConfigNamespace: defaultConfigNamespace,
 	}
@@ -120,9 +124,11 @@ func (m *PodMutator) Mutate(ctx context.Context, pod *corev1.Pod) ([]PatchOperat
 		}
 	}
 
+	initContainer := m.initContainerBuilder.Build(effectiveCfg, mapping)
 	container, volumes := m.sidecarBuilder.Build(effectiveCfg, mapping)
 
 	patchBuilder := NewPatchBuilder(hasExistingAnnotations(pod), hasExistingLabels(pod), hasExistingVolumes(pod))
+	patchBuilder.AddInitContainer(initContainer)
 	patchBuilder.AddContainer(container)
 
 	if annotation.IsNamedPort(effectiveCfg.ProtectedPort) {
@@ -131,6 +137,18 @@ func (m *PodMutator) Mutate(ctx context.Context, pod *corev1.Pod) ([]PatchOperat
 			patchBuilder.RemovePort(i, j)
 		}
 		rewrites := rewriteProbePortNames(pod, effectiveCfg.ProtectedPort, mapping.ProxyPort)
+		for _, rw := range rewrites {
+			patchBuilder.ReplaceProbePort(rw.ContainerIndex, rw.ProbeType, rw.HandlerType, rw.NewPort)
+		}
+	}
+
+	// When block-direct-access is enabled, rewrite health checks to go through oauth2-proxy
+	// since direct access to the protected port is blocked by iptables
+	if effectiveCfg.BlockDirectAccess {
+		rewrites, err := rewriteProbesForBlockedAccess(pod, effectiveCfg.ProtectedPort, mapping)
+		if err != nil {
+			return nil, err
+		}
 		for _, rw := range rewrites {
 			patchBuilder.ReplaceProbePort(rw.ContainerIndex, rw.ProbeType, rw.HandlerType, rw.NewPort)
 		}
@@ -276,4 +294,68 @@ func hasExistingLabels(pod *corev1.Pod) bool {
 // hasExistingVolumes checks if the pod has any volumes
 func hasExistingVolumes(pod *corev1.Pod) bool {
 	return len(pod.Spec.Volumes) > 0
+}
+
+// rewriteProbesForBlockedAccess finds all probes that target the protected port
+// and returns rewrite descriptors to redirect them through oauth2-proxy.
+//
+// When block-direct-access is enabled, iptables blocks direct access to the protected port.
+// Kubelet health checks come from the node (not localhost), so they'll be blocked.
+// This function rewrites them to use the oauth2-proxy port instead.
+func rewriteProbesForBlockedAccess(pod *corev1.Pod, protectedPort string, mapping PortMapping) ([]probeRewrite, error) {
+	var ret []probeRewrite
+	var port int
+	var err error
+	
+	if annotation.IsNamedPort(protectedPort) {
+		port = int(mapping.ProxyPort)
+	} else {
+		port, err = strconv.Atoi(protectedPort)
+		if err != nil {
+			return nil, err
+		}
+	}
+	for i, c := range pod.Spec.Containers {
+		if rw := checkProbeForBlockedAccess(c.LivenessProbe, "livenessProbe", i, protectedPort, int32(port), 4180); rw != nil {
+			ret = append(ret, *rw)
+		}
+		if rw := checkProbeForBlockedAccess(c.ReadinessProbe, "readinessProbe", i, protectedPort, int32(port), 4180); rw != nil {
+			ret = append(ret, *rw)
+		}
+		if rw := checkProbeForBlockedAccess(c.StartupProbe, "startupProbe", i, protectedPort, int32(port), 4180); rw != nil {
+			ret = append(ret, *rw)
+		}
+	}
+
+	return ret, nil
+}
+
+// checkProbeForBlockedAccess checks if a probe targets the protected port
+// and needs rewriting for blocked access mode
+func checkProbeForBlockedAccess(probe *corev1.Probe, probeType string, containerIndex int, protectedPortName string, protectedPortNumber int32, oauth2ProxyPort int32) *probeRewrite {
+	if probe == nil {
+		return nil
+	}
+	var handlerType string
+	var port *intstr.IntOrString
+	if probe.HTTPGet != nil {
+		handlerType = "httpGet"
+		port = &probe.HTTPGet.Port
+	} else if probe.TCPSocket != nil {
+		handlerType = "tcpSocket"
+		port = &probe.TCPSocket.Port
+	}
+	if port == nil {
+		return nil
+	}
+	
+	if (port.Type == intstr.String && port.StrVal == protectedPortName) || (port.Type == intstr.Int && port.IntVal == protectedPortNumber) {
+		return &probeRewrite{
+			ContainerIndex: containerIndex,
+			ProbeType: probeType,
+			HandlerType: handlerType,
+			NewPort: oauth2ProxyPort,
+		}
+	}
+	return nil
 }

@@ -13,6 +13,12 @@ image:
   # Overrides the image tag whose default is the chart appVersion.
   tag: 190df826b777ee50a580e7efb35cc630442873f6
 
+# Init container image for iptables-based port blocking
+# Used when spacemule.net/oauth2-proxy.block-direct-access: "true" annotation is set
+# Requires an image with iptables installed
+initContainer:
+  image: ghcr.io/kube-vip/kube-vip-iptables:v1.0.1
+
 # This is for the secrets for pulling an image from a private repository more information can be found here: https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/
 imagePullSecrets:
 - name: gitea-cred

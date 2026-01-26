@@ -28,6 +28,7 @@ type cmdConfig struct {
 	keyFile          string
 	configNamespace  string
 	defaultConfigMap string
+	initImage        string
 }
 
 // main is the entrypoint for the webhook server
@@ -43,7 +44,8 @@ func main() {
 	builder := mutation.NewSidecarBuilder()
 	merger := config.NewMerger()
 	knativeDetector := mutation.NewKnativeDetector()
-	podMutator := mutation.NewPodMutator(parser, loader, builder, merger, knativeDetector, cfg.defaultConfigMap, cfg.configNamespace)
+	initContainerBuilder := mutation.NewIPTablesInitContainerBuilder(cfg.initImage)
+	podMutator := mutation.NewPodMutator(parser, loader, builder, merger, knativeDetector, initContainerBuilder, cfg.defaultConfigMap, cfg.configNamespace)
 	podHandler := admission.NewHandler(podMutator)
 
 	serviceMutator := service.NewServiceMutator()
@@ -73,6 +75,7 @@ func parseFlags() cmdConfig {
 	flag.StringVar(&c.keyFile, "key-file", "", "path to TLS private key")
 	flag.StringVar(&c.configNamespace, "config-namespace", "", "namespace for ConfigMaps")
 	flag.StringVar(&c.defaultConfigMap, "default-config", "", "default configuration ConfigMap (optional)")
+	flag.StringVar(&c.initImage, "init-image", "ghcr.io/kube-vip/kube-vip-iptables:v1.0.1", "iptables init container image")
 
 	flag.Parse()
 

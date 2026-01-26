@@ -132,6 +132,12 @@ func buildArgs(cfg *config.EffectiveConfig, portMapping PortMapping) []string {
 	if cfg.CookieName != "" {
 		ret = append(ret, "--cookie-name="+cfg.CookieName)
 	}
+	if cfg.PingPath != "" {
+		ret = append(ret, "--ping-path="+cfg.PingPath)
+	}
+	if cfg.ReadyPath != "" {
+		ret = append(ret, "--ready-path="+cfg.ReadyPath)
+	}
 
 	if len(cfg.ExtraJWTIssuers) > 0 {
 		ret = append(ret, "--extra-jwt-issuers="+strings.Join(cfg.ExtraJWTIssuers, ","))

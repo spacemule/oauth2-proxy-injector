@@ -29,6 +29,9 @@ Configuration is done in via configmap for non-sensitive values that are stable 
 | `spacemule.net/oauth2-proxy.ignore-paths` | No | - | Comma-separated paths to skip auth (regex). Format: `path`, `method=path`, or `method!=path` |
 | `spacemule.net/oauth2-proxy.api-paths` | No | - | Comma-separated paths requiring JWT only (no login redirect) |
 | `spacemule.net/oauth2-proxy.skip-jwt-bearer-tokens` | No | `"false"` | Skip login when valid JWT bearer token is provided |
+| `spacemule.net/oauth2-proxy.block-direct-access` | No | `"false"` | Block direct access to protected port via iptables (requires `NET_ADMIN` capability) |
+| `spacemule.net/oauth2-proxy.ping-path` | No | `"/ping"` | Custom path for oauth2-proxy health check endpoint (use if conflicts with app) |
+| `spacemule.net/oauth2-proxy.ready-path` | No | `"/ready"` | Custom path for oauth2-proxy ready endpoint (use if conflicts with app) |
 
 *Either `protected-port` or `upstream` must be set.
 
@@ -119,6 +122,60 @@ Configuration is done in via configmap for non-sensitive values that are stable 
 | `skip-provider-button` | No | `"false"` | Skip provider selection button |
 | `proxy-image` | No | `"quay.io/oauth2-proxy/oauth2-proxy:v7.14.2"` | oauth2-proxy container image |
 | `extra-args` | No | - | Newline-separated extra oauth2-proxy arguments |
+
+## Blocking Direct Access with iptables
+
+When using numbered port mode (service mode), the application container's ports remain accessible directly via the pod IP, potentially bypassing oauth2-proxy authentication. The `block-direct-access` annotation solves this by injecting an init container that configures iptables rules to block direct connections.
+
+### How It Works
+
+1. An init container runs with `NET_ADMIN` capability
+2. It creates iptables rules to:
+   - Accept traffic from `127.0.0.1` (localhost) to the protected port
+   - Drop all other traffic to the protected port
+3. Health checks are automatically rewritten to route through oauth2-proxy
+4. Only traffic through oauth2-proxy (on port 4180) can reach the protected port
+
+### Example
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  annotations:
+    spacemule.net/oauth2-proxy.enabled: "true"
+    spacemule.net/oauth2-proxy.protected-port: "8080"
+    spacemule.net/oauth2-proxy.block-direct-access: "true"
+    spacemule.net/oauth2-proxy.ignore-paths: "/health,/metrics"
+spec:
+  containers:
+  - name: app
+    image: myapp:latest
+    ports:
+    - containerPort: 8080
+    livenessProbe:
+      httpGet:
+        port: 8080  # Automatically rewritten to port 4180
+        path: /health
+```
+
+### Requirements
+
+- Cluster must allow pods with `NET_ADMIN` capability
+- Pod Security Policies/Standards must permit this (if enforced)
+- Health check paths should be added to `ignore-paths` to allow Kubelet access
+
+### Health Check Path Conflicts
+
+If your application uses `/ping` or `/ready` paths (oauth2-proxy's defaults), you can customize oauth2-proxy's health check paths:
+
+```yaml
+metadata:
+  annotations:
+    spacemule.net/oauth2-proxy.block-direct-access: "true"
+    spacemule.net/oauth2-proxy.ping-path: "/oauth2/ping"
+    spacemule.net/oauth2-proxy.ready-path: "/oauth2/ready"
+```
 
 ## Service Annotations
 

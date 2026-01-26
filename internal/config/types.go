@@ -324,6 +324,14 @@ type EffectiveConfig struct {
 	// When set, it's used directly (e.g., "http://other-service:8080/api")
 	Upstream string
 
+	// PingPath overrides oauth2-proxy's ping/healthz endpoint path
+	// Default: "/ping" (oauth2-proxy default)
+	PingPath string
+
+	// ReadyPath overrides oauth2-proxy's ready endpoint path
+	// Default: "/ready" (oauth2-proxy default)
+	ReadyPath string
+
 	// ===== Container Settings (from ConfigMap only) =====
 	ExtraArgs      []string
 	ProxyImage     string

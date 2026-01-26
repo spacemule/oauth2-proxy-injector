@@ -175,6 +175,15 @@ metadata:
     # Only affects auto-calculated upstream (ignored when upstream is set explicitly)
     spacemule.net/oauth2-proxy.upstream-tls: "http"
 
+    # ===== Security (annotation-only) =====
+    # Block direct access to protected port via iptables
+    # Requires NET_ADMIN capability - ensure your PSP/PSA allows it
+    # Health checks are automatically rewritten to go through oauth2-proxy
+    # spacemule.net/oauth2-proxy.block-direct-access: "true"
+    # Custom health check paths (if your app uses /ping or /ready)
+    # spacemule.net/oauth2-proxy.ping-path: "/oauth2/ping"
+    # spacemule.net/oauth2-proxy.ready-path: "/oauth2/ready"
+
     # ===== Identity Overrides (override ConfigMap values) =====
     # Different OAuth app for this service
     # spacemule.net/oauth2-proxy.client-id: "my-service-client"

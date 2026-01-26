@@ -77,6 +77,8 @@ func (m *ConfigMerger) Merge(base *ProxyConfig, overrides *annotation.Config) (*
 	cfg.APIPaths = overrides.APIPaths
 	cfg.SkipJWTBearerTokens = overrides.SkipJWTBearerTokens
 	cfg.UpstreamTLS = overrides.UpstreamTLS
+	cfg.PingPath = overrides.PingPath
+	cfg.ReadyPath = overrides.ReadyPath
 
 	if err := cfg.Validate(); err != nil {
 		return nil, err
