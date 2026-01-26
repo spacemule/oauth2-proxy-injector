@@ -63,7 +63,10 @@ func buildIPTablesScript(ports []int32) string {
 
 // needsSecurityContext returns a SecurityContext with NET_ADMIN capability
 func needsSecurityContext() *corev1.SecurityContext {
+	var rootPt int64 = 0
 	return &corev1.SecurityContext{
+		RunAsUser: &rootPt,
+		RunAsGroup: &rootPt,
 		Capabilities: &corev1.Capabilities{
 			Add: []corev1.Capability{"NET_ADMIN"},
 		},
