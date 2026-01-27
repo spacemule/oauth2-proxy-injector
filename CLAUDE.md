@@ -635,18 +635,43 @@ cookie:
 
 ## Future Features
 
+### Multi-Port Protection (Service Mode)
+
+**Status**: Planned for future implementation
+
+Currently, only a single `protected-port` is supported due to oauth2-proxy's `--http-address` limitation (single listen address). However, service mode opens possibilities for multi-port protection:
+
+**Concept**:
+- In service mode (numbered port), allow `protected-ports: "8080,8554,9000"` (plural, comma-separated)
+- Each port gets its own oauth2-proxy instance OR a single proxy routes to multiple upstreams (alpha config)
+- `block-direct-access` would block ALL listed ports via iptables
+- Service webhook would rewrite ALL listed ports to the proxy
+
+**Implementation considerations**:
+- Multiple sidecar containers (one oauth2-proxy per protected port) - simple but resource-heavy
+- Single proxy with alpha config for path-based routing to multiple upstreams - complex but efficient
+- iptables init container would need to block multiple ports (easy change to loop)
+- Need to handle different TLS modes per port?
+
+**Use case**: MediaMTX with HLS (8888), WebRTC (8889), and RTSP API (8554) all needing auth
+
 ### iptables Init Container for Port Blocking
 
-**Problem**: In service mode, the app container's ports are still accessible directly via pod IP, bypassing oauth2-proxy.
+**Status**: ✅ Implemented (see `internal/mutation/initcontainer.go`)
+
+**Problem**: Pods are directly addressable by IP within the cluster, so protected ports can be accessed directly, bypassing oauth2-proxy. This applies to both named port (takeover) mode and numbered port (service) mode.
 
 **Solution**: Add an init container that runs iptables rules to block direct connections to protected ports, only allowing traffic from oauth2-proxy (localhost).
 
 **Implementation notes**:
 - Init container needs `NET_ADMIN` capability
+- Runs as root (UID 0) for iptables access
 - Block incoming connections to protected port(s) except from 127.0.0.1
-- Example rule: `iptables -A INPUT -p tcp --dport 8888 ! -s 127.0.0.1 -j DROP`
-- **Health check consideration**: Kubelet health checks come from the node, not localhost. If probes target the protected port directly, they will be blocked. Options:
-  - Use a separate health check port that isn't protected
-  - Route health checks through oauth2-proxy (add to `ignore-paths`)
-  - Allow traffic from the node IP (more complex, need to detect node IP)
-- May need annotation to opt-in: `spacemule.net/oauth2-proxy.block-direct-access: "true"`
+- Example rule: `iptables -A INPUT -p tcp --dport 8888 -s 127.0.0.1 -j ACCEPT && iptables -A INPUT -p tcp --dport 8888 -j DROP`
+- Annotation to opt-in: `spacemule.net/oauth2-proxy.block-direct-access: "true"`
+- Default init image: `ghcr.io/kube-vip/kube-vip-iptables:v1.0.1`
+
+**Health check handling**:
+- Kubelet health checks come from the node, not localhost - they get blocked by iptables
+- ✅ `rewriteProbesForBlockedAccess()` in mutator.go rewrites probes to target oauth2-proxy port (4180)
+- ✅ Rewritten probe paths are auto-added to `ignore-paths` as exact-match regexes (e.g., `^/health$`)

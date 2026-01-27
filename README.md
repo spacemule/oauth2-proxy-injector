@@ -185,3 +185,8 @@ For Service mutation webhook (used with numbered port mode):
 |------------|----------|---------|-------------|
 | `spacemule.net/oauth2-proxy.rewrite-ports` | Yes | - | Comma-separated port names or numbers to route through oauth2-proxy |
 | `spacemule.net/oauth2-proxy.proxy-port` | No | `"4180"` | Port where oauth2-proxy listens |
+
+
+TOCHECK:
+
+Add paths for rewritten healthchecks
