@@ -42,6 +42,15 @@ func (b *OAuth2ProxySidecarBuilder) Build(cfg *config.EffectiveConfig, portMappi
 		portName = "oauth2-proxy"
 	}
 
+	ping := "/ping"
+	ready := "/ready"
+	if cfg.PingPath != "" {
+		ping = cfg.PingPath
+	}
+	if cfg.ReadyPath != "" {
+		ready = cfg.ReadyPath
+	}
+
 	container := &corev1.Container{
 		Name:  "oauth2-proxy",
 		Image: cfg.ProxyImage,
@@ -54,8 +63,8 @@ func (b *OAuth2ProxySidecarBuilder) Build(cfg *config.EffectiveConfig, portMappi
 				Protocol:      corev1.ProtocolTCP,
 			},
 		},
-		LivenessProbe:  buildProbe(4180, "/ping"),
-		ReadinessProbe: buildProbe(4180, "/ready"),
+		LivenessProbe:  buildProbe(4180, ping),
+		ReadinessProbe: buildProbe(4180, ready),
 	}
 
 	if cfg.ProxyResources != nil {
