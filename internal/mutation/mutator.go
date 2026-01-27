@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"slices"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -145,7 +146,9 @@ func (m *PodMutator) Mutate(ctx context.Context, pod *corev1.Pod) ([]PatchOperat
 			patchBuilder.ReplaceProbePort(rw.ContainerIndex, rw.ProbeType, rw.HandlerType, rw.NewPort)
 			if rw.Path != "" {
 				path := fmt.Sprintf("^%s$", rw.Path)
-				effectiveCfg.IgnorePaths = append(effectiveCfg.IgnorePaths, path)
+				if !slices.Contains(effectiveCfg.IgnorePaths, path) {
+					effectiveCfg.IgnorePaths = append(effectiveCfg.IgnorePaths, path)
+				}
 			}
 		}
 	} else if annotation.IsNamedPort(effectiveCfg.ProtectedPort) {
