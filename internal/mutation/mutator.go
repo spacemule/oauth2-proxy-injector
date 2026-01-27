@@ -124,15 +124,7 @@ func (m *PodMutator) Mutate(ctx context.Context, pod *corev1.Pod) ([]PatchOperat
 		}
 	}
 
-	initContainer := m.initContainerBuilder.Build(effectiveCfg, mapping)
-	container, volumes := m.sidecarBuilder.Build(effectiveCfg, mapping)
-
 	patchBuilder := NewPatchBuilder(hasExistingAnnotations(pod), hasExistingLabels(pod), hasExistingVolumes(pod), hasExistingInitContainers(pod))
-	if initContainer != nil {
-		patchBuilder.AddInitContainer(initContainer)
-	}
-	patchBuilder.AddContainer(container)
-
 
 	// Remove named ports
 	if annotation.IsNamedPort(effectiveCfg.ProtectedPort) {
@@ -162,6 +154,14 @@ func (m *PodMutator) Mutate(ctx context.Context, pod *corev1.Pod) ([]PatchOperat
 			patchBuilder.ReplaceProbePort(rw.ContainerIndex, rw.ProbeType, rw.HandlerType, rw.NewPort)
 		}
 	}
+
+	initContainer := m.initContainerBuilder.Build(effectiveCfg, mapping)
+	container, volumes := m.sidecarBuilder.Build(effectiveCfg, mapping)
+
+	if initContainer != nil {
+		patchBuilder.AddInitContainer(initContainer)
+	}
+	patchBuilder.AddContainer(container)
 
 	for _, v := range volumes {
 		patchBuilder.AddVolume(v)
