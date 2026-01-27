@@ -133,17 +133,15 @@ func (m *PodMutator) Mutate(ctx context.Context, pod *corev1.Pod) ([]PatchOperat
 	}
 	patchBuilder.AddContainer(container)
 
+
+	// Remove named ports
 	if annotation.IsNamedPort(effectiveCfg.ProtectedPort) {
 		i, j, remove := findProtectedPort(pod, effectiveCfg.ProtectedPort)
 		if remove {
 			patchBuilder.RemovePort(i, j)
 		}
-		rewrites := rewriteProbePortNames(pod, effectiveCfg.ProtectedPort, mapping.ProxyPort)
-		for _, rw := range rewrites {
-			patchBuilder.ReplaceProbePort(rw.ContainerIndex, rw.ProbeType, rw.HandlerType, rw.NewPort)
-		}
 	}
-
+	
 	// When block-direct-access is enabled, rewrite health checks to go through oauth2-proxy
 	// since direct access to the protected port is blocked by iptables
 	if effectiveCfg.BlockDirectAccess {
@@ -151,6 +149,15 @@ func (m *PodMutator) Mutate(ctx context.Context, pod *corev1.Pod) ([]PatchOperat
 		if err != nil {
 			return nil, err
 		}
+		for _, rw := range rewrites {
+			patchBuilder.ReplaceProbePort(rw.ContainerIndex, rw.ProbeType, rw.HandlerType, rw.NewPort)
+			if rw.Path != "" {
+				path := fmt.Sprintf("^%s$", rw.Path)
+				effectiveCfg.IgnorePaths = append(effectiveCfg.IgnorePaths, path)
+			}
+		}
+	} else if annotation.IsNamedPort(effectiveCfg.ProtectedPort) {
+		rewrites := rewriteProbePortNames(pod, effectiveCfg.ProtectedPort, mapping.ProxyPort)
 		for _, rw := range rewrites {
 			patchBuilder.ReplaceProbePort(rw.ContainerIndex, rw.ProbeType, rw.HandlerType, rw.NewPort)
 		}
@@ -267,6 +274,7 @@ type probeRewrite struct {
 	ProbeType      string // "livenessProbe", "readinessProbe", "startupProbe"
 	HandlerType    string // "httpGet" or "tcpSocket"
 	NewPort        int32
+	Path		   string
 }
 
 // isAlreadyInjected checks if the pod already has an oauth2-proxy sidecar
@@ -343,11 +351,16 @@ func checkProbeForBlockedAccess(probe *corev1.Probe, probeType string, container
 	if probe == nil {
 		return nil
 	}
-	var handlerType string
+	var handlerType, path string
 	var port *intstr.IntOrString
 	if probe.HTTPGet != nil {
 		handlerType = "httpGet"
 		port = &probe.HTTPGet.Port
+		if probe.HTTPGet.Path != "" {
+			path = probe.HTTPGet.Path
+		} else {
+			path = "/"
+		}
 	} else if probe.TCPSocket != nil {
 		handlerType = "tcpSocket"
 		port = &probe.TCPSocket.Port
@@ -362,6 +375,7 @@ func checkProbeForBlockedAccess(probe *corev1.Probe, probeType string, container
 			ProbeType: probeType,
 			HandlerType: handlerType,
 			NewPort: oauth2ProxyPort,
+			Path: path,
 		}
 	}
 	return nil
