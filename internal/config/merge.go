@@ -35,7 +35,6 @@ func (m *ConfigMerger) Merge(base *ProxyConfig, overrides *annotation.Config) (*
 		ConfigMapNamespace: base.Namespace,
 		ProxyResources:     base.ProxyResources,
 		ExtraArgs:          base.ExtraArgs,
-		
 	}
 
 	cfg.Provider = mergeString(base.Provider, overrides.Overrides.Provider)
@@ -47,6 +46,7 @@ func (m *ConfigMerger) Merge(base *ProxyConfig, overrides *annotation.Config) (*
 
 	cfg.ClientID = mergeString(base.ClientID, overrides.Overrides.ClientID)
 	cfg.Scope = mergeString(base.Scope, overrides.Overrides.Scope)
+	cfg.ValidateURL = mergeString(base.ValidateURL, overrides.Overrides.ValidateURL)
 	cfg.PKCEEnabled = mergeBool(base.PKCEEnabled, overrides.Overrides.PKCEEnabled)
 	cfg.RedirectURL = mergeString(base.RedirectURL, overrides.Overrides.RedirectURL)
 	cfg.PassAccessToken = mergeBool(base.PassAccessToken, overrides.Overrides.PassAccessToken)

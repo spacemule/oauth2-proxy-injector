@@ -74,9 +74,9 @@ type JSONPatchBuilder struct {
 
 func NewPatchBuilder(hasAnnotations, hasLabels, hasVolumes, hasInitContainers bool) *JSONPatchBuilder {
 	return &JSONPatchBuilder{
-		hasAnnotations: hasAnnotations,
-		hasLabels:      hasLabels,
-		hasVolumes:     hasVolumes,
+		hasAnnotations:    hasAnnotations,
+		hasLabels:         hasLabels,
+		hasVolumes:        hasVolumes,
 		hasInitContainers: hasInitContainers,
 	}
 }

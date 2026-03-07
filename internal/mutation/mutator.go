@@ -3,8 +3,8 @@ package mutation
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"slices"
+	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -28,12 +28,12 @@ type Mutator interface {
 
 // PodMutator implements Mutator for oauth2-proxy sidecar injection
 type PodMutator struct {
-	annotationParser 		annotation.Parser
-	configLoader     		config.Loader
-	sidecarBuilder   		SidecarBuilder
-	configMerger     		config.Merger
-	knativeDetector  		KnativeDetector
-	initContainerBuilder 	InitContainerBuilder
+	annotationParser     annotation.Parser
+	configLoader         config.Loader
+	sidecarBuilder       SidecarBuilder
+	configMerger         config.Merger
+	knativeDetector      KnativeDetector
+	initContainerBuilder InitContainerBuilder
 
 	// defaultConfigMap is the name of the default ConfigMap in the webhook's namespace
 	// Used when pods don't specify spacemule.net/oauth2-proxy.config annotation
@@ -134,7 +134,7 @@ func (m *PodMutator) Mutate(ctx context.Context, pod *corev1.Pod) ([]PatchOperat
 			patchBuilder.RemovePort(i, j)
 		}
 	}
-	
+
 	// When block-direct-access is enabled, rewrite health checks to go through oauth2-proxy
 	// since direct access to the protected port is blocked by iptables
 	if effectiveCfg.BlockDirectAccess {
@@ -277,7 +277,7 @@ type probeRewrite struct {
 	ProbeType      string // "livenessProbe", "readinessProbe", "startupProbe"
 	HandlerType    string // "httpGet" or "tcpSocket"
 	NewPort        int32
-	Path		   string
+	Path           string
 }
 
 // isAlreadyInjected checks if the pod already has an oauth2-proxy sidecar
@@ -324,7 +324,7 @@ func rewriteProbesForBlockedAccess(pod *corev1.Pod, protectedPort string, mappin
 	var ret []probeRewrite
 	var port int
 	var err error
-	
+
 	if annotation.IsNamedPort(protectedPort) {
 		port = int(mapping.ProxyPort)
 	} else {
@@ -371,14 +371,14 @@ func checkProbeForBlockedAccess(probe *corev1.Probe, probeType string, container
 	if port == nil {
 		return nil
 	}
-	
+
 	if (port.Type == intstr.String && port.StrVal == protectedPortName) || (port.Type == intstr.Int && port.IntVal == protectedPortNumber) {
 		return &probeRewrite{
 			ContainerIndex: containerIndex,
-			ProbeType: probeType,
-			HandlerType: handlerType,
-			NewPort: oauth2ProxyPort,
-			Path: path,
+			ProbeType:      probeType,
+			HandlerType:    handlerType,
+			NewPort:        oauth2ProxyPort,
+			Path:           path,
 		}
 	}
 	return nil

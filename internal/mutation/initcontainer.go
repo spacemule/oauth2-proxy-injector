@@ -40,11 +40,11 @@ func (b *IPTablesInitContainerBuilder) Build(cfg *config.EffectiveConfig, portMa
 		return nil
 	}
 	return &corev1.Container{
-		Name: "oauth2-proxy-iptables-init",
-		Image: b.initImage,
-		Command: []string{"/bin/sh", "-c", buildIPTablesScript([]int32{portMapping.ProxyPort})},
+		Name:            "oauth2-proxy-iptables-init",
+		Image:           b.initImage,
+		Command:         []string{"/bin/sh", "-c", buildIPTablesScript([]int32{portMapping.ProxyPort})},
 		SecurityContext: needsSecurityContext(),
-	}	
+	}
 }
 
 // buildIPTablesScript generates the shell script that sets up iptables rules
@@ -57,7 +57,7 @@ func buildIPTablesScript(ports []int32) string {
 		script.WriteString(fmt.Sprintf("iptables -A INPUT -p tcp --dport %d -s 127.0.0.1 -j ACCEPT\n", p))
 		script.WriteString(fmt.Sprintf("iptables -A INPUT -p tcp --dport %d -j DROP\n", p))
 	}
-	
+
 	return script.String()
 }
 
@@ -65,7 +65,7 @@ func buildIPTablesScript(ports []int32) string {
 func needsSecurityContext() *corev1.SecurityContext {
 	var rootPt int64 = 0
 	return &corev1.SecurityContext{
-		RunAsUser: &rootPt,
+		RunAsUser:  &rootPt,
 		RunAsGroup: &rootPt,
 		Capabilities: &corev1.Capabilities{
 			Add: []corev1.Capability{"NET_ADMIN"},

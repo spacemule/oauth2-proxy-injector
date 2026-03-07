@@ -132,6 +132,9 @@ func buildArgs(cfg *config.EffectiveConfig, portMapping PortMapping) []string {
 	if cfg.Scope != "" {
 		ret = append(ret, "--scope="+cfg.Scope)
 	}
+	if cfg.ValidateURL != "" {
+		ret = append(ret, "--validate-url="+cfg.ValidateURL)
+	}
 	if cfg.OIDCGroupsClaim != "" {
 		ret = append(ret, "--oidc-groups-claim="+cfg.OIDCGroupsClaim)
 	}
