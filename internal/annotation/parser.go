@@ -35,11 +35,10 @@ const (
 	KeyInjected = AnnotationPrefix + "injected"
 
 	// KeyBlockDirectAccess optionally disables direct access to the running service at the pod's IP
-	// If enabled, an initContainer is added to the pod to run iptables and block access to the 
+	// If enabled, an initContainer is added to the pod to run iptables and block access to the
 	// protected container's protected port.
 	// Value: "true" or "false" (default)
 	KeyBlockDirectAccess = AnnotationPrefix + "block-direct-access"
-	
 
 	// ===== Port/Routing Annotations (annotation-only) =====
 
@@ -85,6 +84,8 @@ const (
 	// KeyScope overrides the scope from ConfigMap
 	// Format: "scope0 scope1"
 	KeyScope = AnnotationPrefix + "scope"
+
+	KeyValidateURL = AnnotationPrefix + "validate-url"
 
 	// KeyPKCEEnabled overrides PKCE setting from ConfigMap
 	// Value: "true" or "false"
@@ -280,6 +281,9 @@ type ConfigOverrides struct {
 
 	// Scope overrides the scope
 	Scope *string
+
+	// ValidateURL overrides the validate-url
+	ValidateURL *string
 
 	// PKCEEnabled overrides the PKCE setting
 	PKCEEnabled *bool
@@ -492,6 +496,11 @@ func (p *AnnotationParser) Parse(annotations map[string]string) (*Config, error)
 	if v, ok := annotations[KeyScope]; ok {
 		s := strings.TrimSpace(v)
 		cfg.Overrides.Scope = &s
+	}
+
+	if v, ok := annotations[KeyValidateURL]; ok {
+		s := strings.TrimSpace(v)
+		cfg.Overrides.ValidateURL = &s
 	}
 
 	if v, ok := annotations[KeyPKCEEnabled]; ok {

@@ -17,7 +17,7 @@ type ProxyConfig struct {
 	// Namespace is where the ConfigMap lives
 	Namespace string
 
-	// ===== Provider Settings (ConfigMap only - shared across namespace) =====
+	// ===== Provider Settings (shared across namespace) =====
 
 	// Provider is the OAuth2 provider (e.g., "oidc", "google", "github")
 	Provider string
@@ -33,6 +33,9 @@ type ProxyConfig struct {
 	// Scope specifies OAuth scopes to request
 	// Default: "openid email profile" for OIDC
 	Scope string
+
+	// ValidateURL specifies the validation URL for opaque tokens
+	ValidateURL string
 
 	// ===== Identity Settings (overridable per-service) =====
 
@@ -180,6 +183,9 @@ const (
 	// CMKeyScope specifies OAuth scopes to request
 	CMKeyScope = "scope"
 
+	// CMKeyValidateURL specifies validation URL for opaque tokens
+	CMKeyValidateURL = "validate-url"
+
 	// ===== Identity Settings (overridable) =====
 
 	// CMKeyClientID is the OAuth2 client ID
@@ -274,11 +280,12 @@ type EffectiveConfig struct {
 	ConfigMapName      string
 	ConfigMapNamespace string
 
-	// ===== Provider Settings (from ConfigMap only) =====
+	// ===== Provider Settings (merged) =====
 	Provider        string
 	OIDCIssuerURL   string
 	OIDCGroupsClaim string
 	Scope           string
+	ValidateURL     string
 
 	// ===== Identity Settings (merged) =====
 	ClientID        string
