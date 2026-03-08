@@ -124,7 +124,15 @@ func buildArgs(cfg *config.EffectiveConfig, portMapping PortMapping) []string {
 		ret = append(ret, "--pass-authorization-header=true") // default is false
 	}
 
-	if cfg.PKCEEnabled {
+	// Handle PKCE / code-challenge-method
+	// If CodeChallengeMethod is explicitly set, use it (regardless of PKCEEnabled)
+	// If PKCEEnabled is true and CodeChallengeMethod is empty, default to S256
+	if cfg.CodeChallengeMethod != "" {
+		ret = append(ret, "--code-challenge-method="+cfg.CodeChallengeMethod)
+		if cfg.ClientSecretRef == nil {
+			ret = append(ret, "--client-secret-file=/dev/null")
+		}
+	} else if cfg.PKCEEnabled {
 		ret = append(ret, "--code-challenge-method=S256")
 		ret = append(ret, "--client-secret-file=/dev/null")
 	}

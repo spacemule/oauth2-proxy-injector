@@ -94,6 +94,14 @@ func parseConfigMap(data map[string]string, name, namespace string) (*ProxyConfi
 		cfg.PKCEEnabled = false
 	}
 
+	if v, ok := data[CMKeyCodeChallengeMethod]; ok {
+		v = strings.TrimSpace(v)
+		if v != "S256" && v != "plain" && v != "" {
+			return nil, fmt.Errorf("invalid %s value: %q (must be 'S256' or 'plain')", CMKeyCodeChallengeMethod, v)
+		}
+		cfg.CodeChallengeMethod = v
+	}
+
 	if v, ok := data[CMKeyClientSecretRef]; ok {
 		cfg.ClientSecretRef, err = parseSecretRef(v, "client-secret")
 		if err != nil {

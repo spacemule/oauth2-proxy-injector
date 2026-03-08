@@ -53,6 +53,11 @@ type ProxyConfig struct {
 	// Overridable: Some services may use PKCE, others may not
 	PKCEEnabled bool
 
+	// CodeChallengeMethod specifies the PKCE code challenge method ("S256" or "plain")
+	// If PKCEEnabled is true and this is empty, defaults to "S256"
+	// Overridable: Allows custom PKCE method per service
+	CodeChallengeMethod string
+
 	// ===== Cookie Settings =====
 
 	// CookieSecretRef references a Secret containing the cookie encryption secret
@@ -198,6 +203,9 @@ const (
 	// CMKeyPKCEEnabled is whether or not the proxy is using PKCE without a client secret
 	CMKeyPKCEEnabled = "pkce-enabled"
 
+	// CMKeyCodeChallengeMethod is the PKCE code challenge method
+	CMKeyCodeChallengeMethod = "code-challenge-method"
+
 	// ===== Cookie Settings =====
 
 	// CMKeyCookieSecretRef references the cookie secret
@@ -288,9 +296,10 @@ type EffectiveConfig struct {
 	ValidateURL     string
 
 	// ===== Identity Settings (merged) =====
-	ClientID        string
-	ClientSecretRef *SecretRef
-	PKCEEnabled     bool
+	ClientID            string
+	ClientSecretRef     *SecretRef
+	PKCEEnabled         bool
+	CodeChallengeMethod string
 
 	// ===== Cookie Settings (merged) =====
 	CookieSecretRef *SecretRef
