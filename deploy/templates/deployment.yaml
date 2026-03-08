@@ -4,6 +4,8 @@ metadata:
   name: {{ include "oauth2-proxy-injector.fullname" . }}
   labels:
     {{- include "oauth2-proxy-injector.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
@@ -11,10 +13,11 @@ spec:
       {{- include "oauth2-proxy-injector.selectorLabels" . | nindent 6 }}
   template:
     metadata:
-      {{- with .Values.podAnnotations }}
       annotations:
+        spacemule.net/config-hash: "{{- print .Values.defaultProxyConfig | sha256sum }}"
+        {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
-      {{- end }}
+        {{- end }}
       labels:
         {{- include "oauth2-proxy-injector.labels" . | nindent 8 }}
         {{- with .Values.podLabels }}
