@@ -85,11 +85,18 @@ const (
 	// Format: "scope0 scope1"
 	KeyScope = AnnotationPrefix + "scope"
 
+	// KeyValidateURL used to set validation URL for opaque tokens
 	KeyValidateURL = AnnotationPrefix + "validate-url"
 
 	// KeyPKCEEnabled overrides PKCE setting from ConfigMap
 	// Value: "true" or "false"
 	KeyPKCEEnabled = AnnotationPrefix + "pkce-enabled"
+
+	// KeyCodeChallengeMethod overrides the PKCE code challenge method
+	// Value: "S256" or "plain"
+	// Note: If pkce-enabled is true and this is not set, S256 is used automatically
+	// Only set this if you need to override the default or use PKCE without pkce-enabled
+	KeyCodeChallengeMethod = AnnotationPrefix + "code-challenge-method"
 
 	// ===== Authorization Overrides (override ConfigMap values) =====
 
@@ -287,6 +294,10 @@ type ConfigOverrides struct {
 
 	// PKCEEnabled overrides the PKCE setting
 	PKCEEnabled *bool
+
+	// CodeChallengeMethod overrides the PKCE code challenge method
+	// If set, this is used instead of the automatic S256 when PKCEEnabled is true
+	CodeChallengeMethod *string
 
 	// ===== Authorization Overrides =====
 
@@ -509,6 +520,14 @@ func (p *AnnotationParser) Parse(annotations map[string]string) (*Config, error)
 			return nil, err
 		}
 		cfg.Overrides.PKCEEnabled = b
+	}
+
+	if v, ok := annotations[KeyCodeChallengeMethod]; ok {
+		s := strings.TrimSpace(v)
+		if s != "S256" && s != "plain" {
+			return nil, fmt.Errorf("invalid code-challenge-method value: %q (must be 'S256' or 'plain')", v)
+		}
+		cfg.Overrides.CodeChallengeMethod = &s
 	}
 
 	if v, ok := annotations[KeyEmailDomains]; ok {

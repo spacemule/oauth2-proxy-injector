@@ -48,6 +48,7 @@ func (m *ConfigMerger) Merge(base *ProxyConfig, overrides *annotation.Config) (*
 	cfg.Scope = mergeString(base.Scope, overrides.Overrides.Scope)
 	cfg.ValidateURL = mergeString(base.ValidateURL, overrides.Overrides.ValidateURL)
 	cfg.PKCEEnabled = mergeBool(base.PKCEEnabled, overrides.Overrides.PKCEEnabled)
+	cfg.CodeChallengeMethod = mergeString(base.CodeChallengeMethod, overrides.Overrides.CodeChallengeMethod)
 	cfg.RedirectURL = mergeString(base.RedirectURL, overrides.Overrides.RedirectURL)
 	cfg.PassAccessToken = mergeBool(base.PassAccessToken, overrides.Overrides.PassAccessToken)
 	cfg.SetXAuthRequest = mergeBool(base.SetXAuthRequest, overrides.Overrides.SetXAuthRequest)
