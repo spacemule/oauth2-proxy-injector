@@ -1,0 +1,102 @@
+affinity: {}
+certificate:
+    duration: 8760h
+    issuerRef:
+        group: cert-manager.io
+        kind: ClusterIssuer
+        name: self-signed
+    renewBefore: 720h
+config:
+    defaultConfigMap: oauth2-proxy-config
+defaultProxyConfig:
+    clientId: ""
+    clientSecretRef: ""
+    cookieSecretRef: ""
+    cookieSecure: true
+    emailDomains: '*'
+    enabled: false
+    oidcIssuerUrl: ""
+    passAccessToken: false
+    passAuthorizationHeader: false
+    pkceEnabled: false
+    provider: oidc
+    proxyImage: quay.io/oauth2-proxy/oauth2-proxy:v7.14.3
+    setXAuthRequest: false
+    skipProviderButton: true
+fullnameOverride: ""
+image:
+    pullPolicy: IfNotPresent
+    repository: git.spacemule.net/spacemule.net/oauth2-proxy-injector
+    tag: ""
+imagePullSecrets:
+    - name: gitea-cred
+initContainer:
+    image: ghcr.io/kube-vip/kube-vip-iptables:v1.0.1
+livenessProbe:
+    httpGet:
+        path: /healthz
+        port: https
+        scheme: HTTPS
+    initialDelaySeconds: 5
+    periodSeconds: 10
+nameOverride: ""
+namespaceSelector:
+    matchExpressions:
+        - key: oauth2-proxy-injection
+          operator: In
+          values:
+            - enabled
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values:
+            - kube-system
+            - kube-public
+            - kube-node-lease
+nodeSelector: {}
+podAnnotations: {}
+podDisruptionBudget:
+    enabled: false
+podLabels: {}
+podSecurityContext: {}
+readinessProbe:
+    httpGet:
+        path: /readyz
+        port: https
+        scheme: HTTPS
+    initialDelaySeconds: 5
+    periodSeconds: 10
+replicaCount: 1
+resources:
+    limits:
+        cpu: 200m
+        memory: 128Mi
+    requests:
+        cpu: 50m
+        memory: 64Mi
+securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+        drop:
+            - ALL
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+    runAsUser: 65534
+service:
+    port: 443
+    type: ClusterIP
+serviceAccount:
+    annotations: {}
+    automount: true
+    create: true
+    name: ""
+tolerations: []
+volumeMounts: []
+volumes: []
+webhook:
+    domain: spacemule.net
+    failurePolicy: Fail
+    port: 8443
+    serviceWebhook:
+        enabled: true
+        failurePolicy: Ignore
+    timeoutSeconds: 10
