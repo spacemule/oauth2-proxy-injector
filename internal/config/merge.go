@@ -53,14 +53,14 @@ func (m *ConfigMerger) Merge(base *ProxyConfig, overrides *annotation.Config) (*
 	// Provider settings with SourcedValue support
 	cfg.Provider = mergeSourcedValue(base.Provider, overrides.Overrides.Provider)
 	cfg.OIDCIssuerURL = mergeSourcedValue(base.OIDCIssuerURL, overrides.Overrides.OIDCIssuerURL)
-	cfg.OIDCGroupsClaim = mergeString(base.OIDCGroupsClaim, overrides.Overrides.OIDCGroupsClaim)
+	cfg.OIDCGroupsClaim = mergeSourcedValue(base.OIDCGroupsClaim, overrides.Overrides.OIDCGroupsClaim)
 	cfg.Scope = mergeSourcedValue(base.Scope, overrides.Overrides.Scope)
 	cfg.ValidateURL = mergeSourcedValue(base.ValidateURL, overrides.Overrides.ValidateURL)
 
 	// Identity settings
 	cfg.ClientID = mergeSourcedValue(base.ClientID, overrides.Overrides.ClientID)
-	cfg.PKCEEnabled = mergeBool(base.PKCEEnabled, overrides.Overrides.PKCEEnabled)
-	cfg.CodeChallengeMethod = mergeString(base.CodeChallengeMethod, overrides.Overrides.CodeChallengeMethod)
+	cfg.PKCEEnabled = mergeSourcedBool(base.PKCEEnabled, overrides.Overrides.PKCEEnabled)
+	cfg.CodeChallengeMethod = mergeSourcedValue(base.CodeChallengeMethod, overrides.Overrides.CodeChallengeMethod)
 
 	// Client secret with SourcedSecretRef
 	if v, err := mergeSourcedSecretRef(base.ClientSecretRef, overrides.Overrides.ClientSecretRef, "client-secret"); err != nil {
@@ -77,9 +77,9 @@ func (m *ConfigMerger) Merge(base *ProxyConfig, overrides *annotation.Config) (*
 	}
 
 	// Cookie settings
-	cfg.CookieSecure = mergeBool(base.CookieSecure, overrides.Overrides.CookieSecure)
-	cfg.CookieName = mergeString(base.CookieName, overrides.Overrides.CookieName)
-	cfg.CookieDomains = mergeStringSlice(base.CookieDomains, overrides.Overrides.CookieDomains, overrides.Overrides.CookieDomainsSet)
+	cfg.CookieSecure = mergeSourcedBool(base.CookieSecure, overrides.Overrides.CookieSecure)
+	cfg.CookieName = mergeSourcedValue(base.CookieName, overrides.Overrides.CookieName)
+	cfg.CookieDomains = mergeSourcedStringSlice(base.CookieDomains, overrides.Overrides.CookieDomains, overrides.Overrides.CookieDomainsSet)
 
 	// Container settings
 	cfg.ProxyImage = mergeString(base.ProxyImage, overrides.Overrides.ProxyImage)
@@ -89,22 +89,22 @@ func (m *ConfigMerger) Merge(base *ProxyConfig, overrides *annotation.Config) (*
 	cfg.Upstream = mergeSourcedValue("", overrides.Overrides.Upstream)
 
 	// Other settings (no ValueSource support)
-	cfg.PassAccessToken = mergeBool(base.PassAccessToken, overrides.Overrides.PassAccessToken)
-	cfg.SetXAuthRequest = mergeBool(base.SetXAuthRequest, overrides.Overrides.SetXAuthRequest)
-	cfg.PassAuthorizationHeader = mergeBool(base.PassAuthorizationHeader, overrides.Overrides.PassAuthorizationHeader)
-	cfg.SkipProviderButton = mergeBool(base.SkipProviderButton, overrides.Overrides.SkipProviderButton)
-	cfg.WhitelistDomains = mergeStringSlice(base.WhitelistDomains, overrides.Overrides.WhitelistDomains, overrides.Overrides.WhitelistDomainsSet)
-	cfg.EmailDomains = mergeStringSlice(base.EmailDomains, overrides.Overrides.EmailDomains, overrides.Overrides.EmailDomainsSet)
-	cfg.AllowedGroups = mergeStringSlice(base.AllowedGroups, overrides.Overrides.AllowedGroups, overrides.Overrides.AllowedGroupsSet)
+	cfg.PassAccessToken = mergeSourcedBool(base.PassAccessToken, overrides.Overrides.PassAccessToken)
+	cfg.SetXAuthRequest = mergeSourcedBool(base.SetXAuthRequest, overrides.Overrides.SetXAuthRequest)
+	cfg.PassAuthorizationHeader = mergeSourcedBool(base.PassAuthorizationHeader, overrides.Overrides.PassAuthorizationHeader)
+	cfg.SkipProviderButton = mergeSourcedBool(base.SkipProviderButton, overrides.Overrides.SkipProviderButton)
+	cfg.WhitelistDomains = mergeSourcedStringSlice(base.WhitelistDomains, overrides.Overrides.WhitelistDomains, overrides.Overrides.WhitelistDomainsSet)
+	cfg.EmailDomains = mergeSourcedStringSlice(base.EmailDomains, overrides.Overrides.EmailDomains, overrides.Overrides.EmailDomainsSet)
+	cfg.AllowedGroups = mergeSourcedStringSlice(base.AllowedGroups, overrides.Overrides.AllowedGroups, overrides.Overrides.AllowedGroupsSet)
 	// cfg.AllowedEmails = mergeStringSlice(base.AllowedEmails, overrides.Overrides.AllowedEmails, overrides.Overrides.AllowedEmailsSet)
-	cfg.ExtraJWTIssuers = mergeStringSlice(base.ExtraJWTIssuers, overrides.Overrides.ExtraJWTIssuers, overrides.Overrides.ExtraJWTIssuersSet)
+	cfg.ExtraJWTIssuers = mergeSourcedStringSlice(base.ExtraJWTIssuers, overrides.Overrides.ExtraJWTIssuers, overrides.Overrides.ExtraJWTIssuersSet)
 
 	// Annotation-only settings
 	cfg.BlockDirectAccess = overrides.BlockDirectAccess
 	cfg.ProtectedPort = overrides.ProtectedPort
 	cfg.IgnorePaths = overrides.IgnorePaths
 	cfg.APIPaths = overrides.APIPaths
-	cfg.SkipJWTBearerTokens = overrides.SkipJWTBearerTokens
+	cfg.SkipJWTBearerTokens = mergeSourcedBool(false, overrides.Overrides.SkipJWTBearerTokens)
 	cfg.UpstreamTLS = overrides.UpstreamTLS
 	cfg.PingPath = overrides.PingPath
 	cfg.ReadyPath = overrides.ReadyPath
@@ -130,16 +130,17 @@ func mergeString(base string, override *string) string {
 // Returns a SourcedValue with the resolved value and source type:
 //   - If override.IsSet() -> use override's Type and Value
 //   - Else -> use base value with ValueSourceLiteral type
-//
-// TODO:
-// 1. Check if override.IsSet()
-// 2. If set:
-//    a. Return SourcedValue{Value: override.Value, Source: override.Type}
-//    b. Note: for file/env, Value will be empty (that's fine)
-// 3. If not set:
-//    a. Return SourcedValue{Value: base, Source: ValueSourceLiteral}
 func mergeSourcedValue(base string, override annotation.ValueSource) SourcedValue {
-	panic("TODO: implement")
+	if override.IsSet() {
+		return SourcedValue{
+			Value: override.Value,
+			Source: override.Type,
+		}
+	}
+	return SourcedValue{
+		Value: base,
+		Source: annotation.ValueSourceLiteral,
+	}
 }
 
 // mergeSourcedSecretRef merges a base SecretRef with a ValueSource override
@@ -151,19 +152,67 @@ func mergeSourcedValue(base string, override annotation.ValueSource) SourcedValu
 //   - ValueSourceLiteral -> parse override.Value as SecretRef
 //   - ValueSourceFile -> return SourcedSecretRef{Ref: nil, Source: ValueSourceFile}
 //   - ValueSourceEnv -> return SourcedSecretRef{Ref: nil, Source: ValueSourceEnv}
-//
-// TODO:
-// 1. Check if override.IsSet()
-// 2. If not set:
-//    a. If base != nil -> return SourcedSecretRef{Ref: base, Source: ValueSourceLiteral}
-//    b. Else -> return SourcedSecretRef{} (zero value, neither set)
-// 3. If set:
-//    a. Switch on override.Type:
-//       - ValueSourceLiteral: parse override.Value as SecretRef using parseSecretRef
-//       - ValueSourceFile: return SourcedSecretRef{Source: ValueSourceFile}
-//       - ValueSourceEnv: return SourcedSecretRef{Source: ValueSourceEnv}
 func mergeSourcedSecretRef(base *SecretRef, override annotation.ValueSource, defaultKey string) (SourcedSecretRef, error) {
-	panic("TODO: implement")
+	if !override.IsSet() {
+		if base != nil {
+			return SourcedSecretRef{
+				Ref: base,
+				Source: annotation.ValueSourceLiteral,
+			}, nil
+		}
+		return SourcedSecretRef{}, nil
+	}
+	switch override.Type {
+	case annotation.ValueSourceLiteral:
+		ref, err := parseSecretRef(override.Value, defaultKey)
+		if err != nil {
+			return SourcedSecretRef{}, err
+		}
+		return SourcedSecretRef{
+			Ref: ref,
+			Source: annotation.ValueSourceLiteral,
+		}, err
+	case annotation.ValueSourceFile:
+		return SourcedSecretRef{Source: annotation.ValueSourceFile}, nil
+	case annotation.ValueSourceEnv:
+		return SourcedSecretRef{Source: annotation.ValueSourceEnv}, nil
+	default:
+		return SourcedSecretRef{}, fmt.Errorf("could not merge override %s", override.Value)
+	}
+}
+
+// mergeSourcedBool merges a base bool value with a BoolValueSource override
+//
+// Returns a SourcedBool with the resolved value and source type:
+//   - If override.IsSet() -> use override's Type and Value
+//   - Else -> use base value with ValueSourceLiteral type
+func mergeSourcedBool(base bool, override annotation.BoolValueSource) SourcedBool {
+	if override.IsSet() {
+		return SourcedBool{
+			Value:  override.Value,
+			Source: override.Type,
+		}
+	}
+	return SourcedBool{
+		Value:  base,
+		Source: annotation.ValueSourceLiteral,
+	}
+}
+
+// mergeSourcedStringSlice merges a base []string with a StringSliceValueSource override
+func mergeSourcedStringSlice(base []string, override annotation.StringSliceValueSource) SourcedStringSlice {
+	if override.IsSet() {
+		return SourcedStringSlice{
+			Values: override.Values,
+			Source: override.Type,
+			Set:    true,
+		}
+	}
+	return SourcedStringSlice{
+		Values: base,
+		Source: annotation.ValueSourceLiteral,
+		Set:    len(base) > 0,
+	}
 }
 
 // mergeBool returns override if non-nil, otherwise base
