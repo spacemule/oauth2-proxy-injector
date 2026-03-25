@@ -675,3 +675,172 @@ Currently, only a single `protected-port` is supported due to oauth2-proxy's `--
 - Kubelet health checks come from the node, not localhost - they get blocked by iptables
 - ✅ `rewriteProbesForBlockedAccess()` in mutator.go rewrites probes to target oauth2-proxy port (4180)
 - ✅ Rewritten probe paths are auto-added to `ignore-paths` as exact-match regexes (e.g., `^/health$`)
+
+## Current Implementation: fromEnv Support
+
+### Status: IN PROGRESS
+
+Adding `fromEnv` support for all non-pod-specific configuration fields. When an annotation value is set to `"fromEnv"`, the webhook skips generating that flag and lets oauth2-proxy read from `OAUTH2_PROXY_*` environment variables at runtime.
+
+### Design
+
+**Annotation format:**
+```yaml
+annotations:
+  spacemule.net/oauth2-proxy.enabled: "true"
+  spacemule.net/oauth2-proxy.secret-provider-class: "vault-oauth2-secrets"
+
+  # Use "fromEnv" to skip flag, oauth2-proxy reads OAUTH2_PROXY_* env vars
+  spacemule.net/oauth2-proxy.provider: "fromEnv"
+  spacemule.net/oauth2-proxy.client-id: "fromEnv"
+  spacemule.net/oauth2-proxy.oidc-issuer-url: "fromEnv"
+
+  # Use "file" for secrets via CSI mount
+  spacemule.net/oauth2-proxy.client-secret: "file"
+  spacemule.net/oauth2-proxy.cookie-secret: "file"
+
+  # Literal values work as before
+  spacemule.net/oauth2-proxy.redirect-url: "https://myapp.example.com/oauth2/callback"
+```
+
+**Value source types:**
+| Value | Meaning | Result |
+|-------|---------|--------|
+| `"file"` | Read from CSI mount | `--client-secret-file=/etc/oauth2-proxy/conf.d/client-secret` (secrets only) |
+| `"fromEnv"` | Read from env var | Flag skipped, oauth2-proxy reads `OAUTH2_PROXY_*` automatically |
+| `<literal>` | Direct value | `--flag=value` (current behavior) |
+
+**Pod-specific fields (NO fromEnv support):**
+- `protected-port` - which port to proxy
+- `upstream-tls` - TLS mode for upstream
+- `ignore-paths` - paths to skip auth
+- `api-paths` - paths requiring JWT only
+- `block-direct-access` - iptables protection
+- `ping-path` / `ready-path` - probe endpoints
+
+**Everything else supports fromEnv:**
+- Provider settings: `provider`, `oidc-issuer-url`, `oidc-groups-claim`, `scope`, `validate-url`
+- Identity: `client-id`, `client-secret`, `pkce-enabled`, `code-challenge-method`
+- Cookies: `cookie-secret`, `cookie-domains`, `cookie-secure`, `cookie-name`
+- Authorization: `email-domains`, `allowed-groups`, `whitelist-domains`
+- Routing: `redirect-url`, `extra-jwt-issuers`, `upstream`
+- Headers: `pass-access-token`, `set-xauthrequest`, `pass-authorization-header`
+- Behavior: `skip-provider-button`, `skip-jwt-bearer-tokens`
+- Container: `proxy-image`
+
+### New Types
+
+```go
+// config/types.go
+
+// SourcedValue - string with source tracking
+type SourcedValue struct {
+    Value  string
+    Source annotation.ValueSourceType
+}
+func (sv SourcedValue) IsFromEnv() bool
+func (sv SourcedValue) IsFromFile() bool
+func (sv SourcedValue) IsLiteral() bool
+
+// SourcedBool - bool with source tracking
+type SourcedBool struct {
+    Value  bool
+    Source annotation.ValueSourceType
+}
+func (sb SourcedBool) IsFromEnv() bool
+func (sb SourcedBool) IsLiteral() bool
+
+// SourcedStringSlice - []string with source tracking
+type SourcedStringSlice struct {
+    Values []string
+    Source annotation.ValueSourceType
+    Set    bool
+}
+func (ss SourcedStringSlice) IsFromEnv() bool
+func (ss SourcedStringSlice) IsLiteral() bool
+
+// SourcedSecretRef - SecretRef with source tracking
+type SourcedSecretRef struct {
+    Ref    *SecretRef
+    Source annotation.ValueSourceType
+}
+func (ssr SourcedSecretRef) IsFromEnv() bool
+func (ssr SourcedSecretRef) IsFromFile() bool
+func (ssr SourcedSecretRef) IsLiteral() bool
+```
+
+### Implementation TODO
+
+**Current state:** Types are scaffolded, but `Parse()` function needs updating to use them. Build is broken until Parse() is fixed.
+
+**Files to update:**
+
+1. **`internal/annotation/parser.go`**
+   - [x] Add `ValueSourceType`, `ValueSource` types
+   - [x] Add `BoolValueSource`, `StringSliceValueSource` types
+   - [ ] Implement `ParseValueSource(value string) ValueSource`
+   - [ ] Implement `ParseBoolValueSource(value string) (BoolValueSource, error)`
+   - [ ] Implement `ParseStringSliceValueSource(value string) StringSliceValueSource`
+   - [x] Update `ConfigOverrides` to use new types for all fields
+   - [ ] Update `Parse()` function to use new parse functions (BROKEN - needs fixing)
+   - [ ] Remove `SkipJWTBearerTokens` from `Config` struct (moved to `ConfigOverrides`)
+
+2. **`internal/config/types.go`**
+   - [x] Add `SourcedValue`, `SourcedBool`, `SourcedStringSlice`, `SourcedSecretRef` types
+   - [x] Add helper methods (`IsFromEnv()`, `IsLiteral()`, `IsFromFile()`)
+   - [x] Update `EffectiveConfig` to use `Sourced*` types for all non-pod-specific fields
+
+3. **`internal/config/merge.go`**
+   - [ ] Implement `mergeSourcedValue(base string, override ValueSource) SourcedValue`
+   - [ ] Implement `mergeSourcedBool(base bool, override BoolValueSource) SourcedBool`
+   - [ ] Implement `mergeSourcedStringSlice(base []string, override StringSliceValueSource) SourcedStringSlice`
+   - [ ] Implement `mergeSourcedSecretRef(base *SecretRef, override ValueSource, defaultKey string) (SourcedSecretRef, error)`
+   - [ ] Update `Merge()` to use new merge functions for all fields
+   - [ ] Update `Validate()` to skip validation when source is `fromEnv`
+   - [ ] Update `String()` for logging
+
+4. **`internal/mutation/sidecar.go`**
+   - [ ] Update `buildArgs()` to check `IsFromEnv()` for ALL fields before adding flags
+   - [ ] Update `buildEnvVars()` to check source types for secrets
+   - [ ] Add helper: `appendIfLiteral(args *[]string, flag string, sv SourcedValue)`
+   - [ ] Add helper: `appendBoolIfLiteral(args *[]string, flag string, sb SourcedBool)`
+   - [ ] Add helper: `appendSliceIfLiteral(args *[]string, flag string, ss SourcedStringSlice)`
+
+5. **Tests**
+   - [ ] Unit tests for `ParseValueSource`, `ParseBoolValueSource`, `ParseStringSliceValueSource`
+   - [ ] Unit tests for merge functions
+   - [ ] Integration test: annotation with `fromEnv` produces no flag
+   - [ ] Integration test: annotation with `file` produces `--*-file` flag
+
+### Example: buildArgs After Changes
+
+```go
+func buildArgs(cfg *config.EffectiveConfig, portMapping PortMapping) []string {
+    var ret []string
+
+    // Provider - skip if fromEnv
+    if !cfg.Provider.IsFromEnv() {
+        ret = append(ret, "--provider="+cfg.Provider.Value)
+    }
+
+    // Client ID - skip if fromEnv
+    if !cfg.ClientID.IsFromEnv() {
+        ret = append(ret, "--client-id="+cfg.ClientID.Value)
+    }
+
+    // Cookie secure - skip if fromEnv
+    if !cfg.CookieSecure.IsFromEnv() && !cfg.CookieSecure.Value {
+        ret = append(ret, "--cookie-secure=false")
+    }
+
+    // Email domains - skip if fromEnv
+    if !cfg.EmailDomains.IsFromEnv() {
+        for _, d := range cfg.EmailDomains.Values {
+            ret = append(ret, "--email-domain="+d)
+        }
+    }
+
+    // ... etc for all fields
+    return ret
+}
+```

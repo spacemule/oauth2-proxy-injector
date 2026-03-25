@@ -207,6 +207,27 @@ const (
 	// Use case: Route to different backend, external service, or specific path
 	// When set, this REPLACES the auto-calculated upstream from port mapping
 	KeyUpstream = AnnotationPrefix + "upstream"
+
+	// ===== Secret Provider Class (CSI Driver) =====
+
+	// KeySecretProviderClass specifies a SecretProviderClass for CSI secrets driver
+	// Value: name of a SecretProviderClass resource (e.g., "oauth2-proxy-vault-secrets")
+	// When set, secrets and config are read from files mounted via the CSI driver
+	// instead of from Kubernetes Secrets or annotations.
+	//
+	// The CSI volume is mounted at /etc/oauth2-proxy/conf.d/ in the oauth2-proxy sidecar.
+	// Files in that directory override config values by matching annotation key names:
+	//   - client-secret -> --client-secret-file (special handling)
+	//   - cookie-secret -> --cookie-secret-file (special handling)
+	//   - client-id -> --client-id=<file contents>
+	//   - redirect-url -> --redirect-url=<file contents>
+	//   - etc.
+	//
+	// Precedence (highest to lowest):
+	//   1. Files in secret-provider-class mount
+	//   2. Pod annotations
+	//   3. ConfigMap
+	KeySecretProviderClass = AnnotationPrefix + "secret-provider-class"
 )
 
 // UpstreamTLSMode represents the TLS verification mode for upstream connections
@@ -224,6 +245,124 @@ const (
 	UpstreamNoTLS UpstreamTLSMode = "http"
 )
 
+// ValueSourceType represents how a configuration value should be resolved
+type ValueSourceType string
+
+const (
+	// ValueSourceLiteral means the value is used directly as provided
+	ValueSourceLiteral ValueSourceType = "literal"
+
+	// ValueSourceFile means the value should be read from a CSI-mounted file
+	// Only valid for: client-secret, cookie-secret
+	// Results in: --client-secret-file=/etc/oauth2-proxy/conf.d/client-secret
+	ValueSourceFile ValueSourceType = "file"
+
+	// ValueSourceEnv means oauth2-proxy should read the value from environment variables
+	// The webhook skips generating the flag; oauth2-proxy reads OAUTH2_PROXY_* vars automatically
+	// Example: client-id: "fromEnv" -> no --client-id flag, oauth2-proxy reads OAUTH2_PROXY_CLIENT_ID
+	ValueSourceEnv ValueSourceType = "fromEnv"
+)
+
+// ValueSource represents a configuration value with its source type
+// This allows values to come from literals, CSI-mounted files, or environment variables
+type ValueSource struct {
+	// Type indicates how this value should be resolved
+	Type ValueSourceType
+
+	// Value holds the literal value when Type is ValueSourceLiteral
+	// Empty when Type is ValueSourceFile or ValueSourceEnv
+	Value string
+}
+
+// ParseValueSource parses an annotation value into a ValueSource
+//
+// Supported formats:
+//   - "file"    -> ValueSource{Type: ValueSourceFile}
+//   - "fromEnv" -> ValueSource{Type: ValueSourceEnv}
+//   - anything else -> ValueSource{Type: ValueSourceLiteral, Value: <the value>}
+//
+// TODO:
+// 1. Trim whitespace from value
+// 2. Check if value == "file" -> return ValueSource{Type: ValueSourceFile}
+// 3. Check if value == "fromEnv" -> return ValueSource{Type: ValueSourceEnv}
+// 4. Otherwise -> return ValueSource{Type: ValueSourceLiteral, Value: value}
+func ParseValueSource(value string) ValueSource {
+	panic("TODO: implement")
+}
+
+// BoolValueSource represents a boolean configuration value with its source type
+type BoolValueSource struct {
+	Type  ValueSourceType
+	Value bool
+}
+
+// IsSet returns true if this was explicitly set
+func (bvs BoolValueSource) IsSet() bool {
+	return bvs.Type != ""
+}
+
+// ParseBoolValueSource parses an annotation value into a BoolValueSource
+//
+// Supported formats:
+//   - "fromEnv" -> BoolValueSource{Type: ValueSourceEnv}
+//   - "true"/"1" -> BoolValueSource{Type: ValueSourceLiteral, Value: true}
+//   - "false"/"0" -> BoolValueSource{Type: ValueSourceLiteral, Value: false}
+//
+// TODO:
+// 1. Trim whitespace from value
+// 2. Check if value == "fromEnv" -> return BoolValueSource{Type: ValueSourceEnv}
+// 3. Parse as bool ("true"/"1" -> true, "false"/"0" -> false)
+// 4. Return BoolValueSource{Type: ValueSourceLiteral, Value: parsed}
+func ParseBoolValueSource(value string) (BoolValueSource, error) {
+	panic("TODO: implement")
+}
+
+// StringSliceValueSource represents a string slice configuration value with its source type
+type StringSliceValueSource struct {
+	Type   ValueSourceType
+	Values []string
+}
+
+// IsSet returns true if this was explicitly set
+func (ssvs StringSliceValueSource) IsSet() bool {
+	return ssvs.Type != ""
+}
+
+// ParseStringSliceValueSource parses an annotation value into a StringSliceValueSource
+//
+// Supported formats:
+//   - "fromEnv" -> StringSliceValueSource{Type: ValueSourceEnv}
+//   - comma-separated values -> StringSliceValueSource{Type: ValueSourceLiteral, Values: [...]}
+//
+// TODO:
+// 1. Trim whitespace from value
+// 2. Check if value == "fromEnv" -> return StringSliceValueSource{Type: ValueSourceEnv}
+// 3. Split by comma and trim each value
+// 4. Return StringSliceValueSource{Type: ValueSourceLiteral, Values: parsed}
+func ParseStringSliceValueSource(value string) StringSliceValueSource {
+	panic("TODO: implement")
+}
+
+// IsSet returns true if this ValueSource was explicitly set (not zero value)
+func (vs ValueSource) IsSet() bool {
+	return vs.Type != ""
+}
+
+// IsLiteral returns true if this is a literal value
+func (vs ValueSource) IsLiteral() bool {
+	return vs.Type == ValueSourceLiteral
+}
+
+// IsFile returns true if this value should be read from a file
+func (vs ValueSource) IsFile() bool {
+	return vs.Type == ValueSourceFile
+}
+
+// IsFromEnv returns true if oauth2-proxy should read this from env vars
+func (vs ValueSource) IsFromEnv() bool {
+	return vs.Type == ValueSourceEnv
+}
+
 // Config holds parsed annotation values for a pod
 // This includes both annotation-only settings and ConfigMap overrides
 type Config struct {
@@ -238,144 +377,145 @@ type Config struct {
 	// BlockDirectAccess indicates whether or not to inject an iptables initContainer to protect the service
 	BlockDirectAccess bool
 
-	// ===== Port/Routing Settings (annotation-only) =====
+	// SecretProviderClass is the name of the SecretProviderClass for CSI secrets driver
+	// When set, a CSI volume is mounted and config values are read from files
+	SecretProviderClass string
+
+	// ===== Pod-Specific Settings (annotation-only, no fromEnv support) =====
+	// These are inherently per-pod and wouldn't make sense to read from env vars
 
 	// ProtectedPort is the name of the port that should be proxied
 	ProtectedPort string
 
-	// IgnorePaths is the list of paths that should NOT be proxied
+	// IgnorePaths is the list of paths that should NOT be proxied (pod-specific routing)
 	IgnorePaths []string
 
 	// APIPaths is the list of paths that should not offer login and instead require a JWT
 	APIPaths []string
 
-	// SkipJWTBearerTokens skips login when bearer tokens are provided
-	// Defaults to false (i.e. do not skip login)
-	SkipJWTBearerTokens bool
-
 	// UpstreamTLS is the TLS mode for upstream connections
 	UpstreamTLS UpstreamTLSMode
 
 	// PingPath is the path for oauth2-proxy's ping/healthz endpoint
-	// Default: "/ping" (oauth2-proxy default)
 	PingPath string
 
 	// ReadyPath is the path for oauth2-proxy's ready endpoint
-	// Default: "/ready" (oauth2-proxy default)
 	ReadyPath string
 
 	// ===== ConfigMap Overrides =====
 	// These fields override the corresponding ConfigMap values when set.
-	// Use pointer types or "set" flags to distinguish "not set" from "set to empty/false"
+	// All support "fromEnv" to let oauth2-proxy read from environment variables.
 
 	// Overrides contains all the fields that can override ConfigMap values
 	Overrides ConfigOverrides
 }
 
 // ConfigOverrides holds annotation values that override ConfigMap settings
-// Pointer types are used so nil means "use ConfigMap value" vs empty/false meaning "override to empty/false"
+//
+// All non-pod-specific fields support "fromEnv" to let oauth2-proxy read from
+// environment variables at runtime instead of passing flags.
+//
+// Value source types:
+//   - "file"    -> read from CSI-mounted file (only client-secret, cookie-secret)
+//   - "fromEnv" -> oauth2-proxy reads from OAUTH2_PROXY_* env var (webhook skips the flag)
+//   - <value>   -> literal value passed as --flag=<value>
 type ConfigOverrides struct {
+	// ===== Provider Overrides =====
+
+	// Provider overrides the OAuth2 provider type
+	Provider ValueSource
+
+	// OIDCIssuerURL overrides the OIDC issuer URL
+	OIDCIssuerURL ValueSource
+
+	// OIDCGroupsClaim overrides the OIDC groups claim name
+	OIDCGroupsClaim ValueSource
+
+	// Scope overrides the scope
+	Scope ValueSource
+
+	// ValidateURL overrides the validate-url
+	ValidateURL ValueSource
+
 	// ===== Identity Overrides =====
 
 	// ClientID overrides the OAuth2 client ID
-	ClientID *string
+	ClientID ValueSource
 
 	// ClientSecretRef overrides the client secret reference
-	ClientSecretRef *string
-
-	// CookieSecretRef overrides the cookie secret reference
-	CookieSecretRef *string
-
-	// Scope overrides the scope
-	Scope *string
-
-	// ValidateURL overrides the validate-url
-	ValidateURL *string
+	// When literal: Value is "secret-name" or "secret-name:key"
+	// When file: uses --client-secret-file pointing to CSI mount
+	// When fromEnv: skips flag (oauth2-proxy reads OAUTH2_PROXY_CLIENT_SECRET)
+	ClientSecretRef ValueSource
 
 	// PKCEEnabled overrides the PKCE setting
-	PKCEEnabled *bool
+	PKCEEnabled BoolValueSource
 
 	// CodeChallengeMethod overrides the PKCE code challenge method
-	// If set, this is used instead of the automatic S256 when PKCEEnabled is true
-	CodeChallengeMethod *string
+	CodeChallengeMethod ValueSource
+
+	// ===== Cookie Overrides =====
+
+	// CookieSecretRef overrides the cookie secret reference
+	// When literal: Value is "secret-name" or "secret-name:key"
+	// When file: uses --cookie-secret-file pointing to CSI mount
+	// When fromEnv: skips flag (oauth2-proxy reads OAUTH2_PROXY_COOKIE_SECRET)
+	CookieSecretRef ValueSource
+
+	// CookieDomains overrides cookie domains
+	CookieDomains StringSliceValueSource
+
+	// CookieSecure overrides the cookie secure flag
+	CookieSecure BoolValueSource
+
+	// CookieName overrides cookie name
+	CookieName ValueSource
 
 	// ===== Authorization Overrides =====
 
 	// EmailDomains overrides allowed email domains
-	// nil = use ConfigMap, empty slice = explicitly no domains allowed
-	EmailDomains    []string
-	EmailDomainsSet bool
+	EmailDomains StringSliceValueSource
 
 	// AllowedGroups overrides allowed groups
-	AllowedGroups    []string
-	AllowedGroupsSet bool
+	AllowedGroups StringSliceValueSource
 
-	// AllowedEmails overrides allowed email addresses
-	// AllowedEmails []string
-	// AllowedEmailsSet bool
-
-	// WhitelistDomains overrides allowed domains
-	WhitelistDomains    []string
-	WhitelistDomainsSet bool
-
-	// CookieName overrides cookie name
-	CookieName *string
-
-	// CookieDomains overrides cookie domains
-	CookieDomains    []string
-	CookieDomainsSet bool
+	// WhitelistDomains overrides allowed domains for redirects
+	WhitelistDomains StringSliceValueSource
 
 	// ===== Routing Overrides =====
 
 	// RedirectURL overrides the OAuth callback URL
-	RedirectURL *string
+	RedirectURL ValueSource
 
 	// ExtraJWTIssuers overrides extra JWT issuers
-	ExtraJWTIssuers    []string
-	ExtraJWTIssuersSet bool
+	ExtraJWTIssuers StringSliceValueSource
+
+	// Upstream overrides the auto-calculated upstream URL
+	Upstream ValueSource
 
 	// ===== Header Overrides =====
 
 	// PassAccessToken overrides pass-access-token
-	PassAccessToken *bool
+	PassAccessToken BoolValueSource
 
 	// SetXAuthRequest overrides set-xauthrequest
-	SetXAuthRequest *bool
+	SetXAuthRequest BoolValueSource
 
 	// PassAuthorizationHeader overrides pass-authorization-header
-	PassAuthorizationHeader *bool
+	PassAuthorizationHeader BoolValueSource
 
 	// ===== Behavior Overrides =====
 
 	// SkipProviderButton overrides skip-provider-button
-	SkipProviderButton *bool
+	SkipProviderButton BoolValueSource
 
-	// ===== Provider Overrides (rarely needed) =====
-
-	// Provider overrides the OAuth2 provider type
-	Provider *string
-
-	// OIDCIssuerURL overrides the OIDC issuer URL
-	OIDCIssuerURL *string
-
-	// OIDCGroupsClaim overrides the OIDC groups claim name
-	OIDCGroupsClaim *string
-
-	// ===== Cookie Overrides =====
-
-	// CookieSecure overrides the cookie secure flag
-	CookieSecure *bool
+	// SkipJWTBearerTokens overrides skip-jwt-bearer-tokens
+	SkipJWTBearerTokens BoolValueSource
 
 	// ===== Container Overrides =====
 
 	// ProxyImage overrides the oauth2-proxy container image
-	ProxyImage *string
-
-	// ===== Upstream Override =====
-
-	// Upstream overrides the auto-calculated upstream URL
-	// When set, replaces the default http://127.0.0.1:<port> behavior
-	Upstream *string
+	ProxyImage ValueSource
 }
 
 // Parser defines the interface for parsing pod annotations
@@ -419,13 +559,11 @@ func (p *AnnotationParser) Parse(annotations map[string]string) (*Config, error)
 	}
 
 	if v, ok := annotations[KeyProvider]; ok {
-		s := strings.TrimSpace(v)
-		cfg.Overrides.Provider = &s
+		cfg.Overrides.Provider = ParseValueSource(v)
 	}
 
 	if v, ok := annotations[KeyOIDCIssuerURL]; ok {
-		s := strings.TrimSpace(v)
-		cfg.Overrides.OIDCIssuerURL = &s
+		cfg.Overrides.OIDCIssuerURL = ParseValueSource(v)
 	}
 
 	if v, ok := annotations[KeyOIDCGroupsClaim]; ok {
@@ -447,8 +585,7 @@ func (p *AnnotationParser) Parse(annotations map[string]string) (*Config, error)
 	}
 
 	if v, ok := annotations[KeyUpstream]; ok {
-		s := strings.TrimSpace(v)
-		cfg.Overrides.Upstream = &s
+		cfg.Overrides.Upstream = ParseValueSource(v)
 	}
 
 	if v, ok := annotations[KeyCookieSecure]; ok {
@@ -482,6 +619,10 @@ func (p *AnnotationParser) Parse(annotations map[string]string) (*Config, error)
 		}
 	}
 
+	if v, ok := annotations[KeySecretProviderClass]; ok {
+		cfg.SecretProviderClass = strings.TrimSpace(v)
+	}
+
 	if v, ok := annotations[KeyUpstreamTLS]; ok {
 		if v != string(UpstreamNoTLS) && v != string(UpstreamTLSInsecure) && v != string(UpstreamTLSSecure) {
 			return nil, fmt.Errorf("invalid upstream-tls value: %q (must be %s, %s, or %s)", v, UpstreamNoTLS, UpstreamTLSInsecure, UpstreamTLSSecure)
@@ -490,28 +631,23 @@ func (p *AnnotationParser) Parse(annotations map[string]string) (*Config, error)
 	}
 
 	if v, ok := annotations[KeyClientID]; ok {
-		s := strings.TrimSpace(v)
-		cfg.Overrides.ClientID = &s
+		cfg.Overrides.ClientID = ParseValueSource(v)
 	}
 
 	if v, ok := annotations[KeyClientSecretRef]; ok {
-		s := strings.TrimSpace(v)
-		cfg.Overrides.ClientSecretRef = &s
+		cfg.Overrides.ClientSecretRef = ParseValueSource(v)
 	}
 
 	if v, ok := annotations[KeyCookieSecretRef]; ok {
-		s := strings.TrimSpace(v)
-		cfg.Overrides.CookieSecretRef = &s
+		cfg.Overrides.CookieSecretRef = ParseValueSource(v)
 	}
 
 	if v, ok := annotations[KeyScope]; ok {
-		s := strings.TrimSpace(v)
-		cfg.Overrides.Scope = &s
+		cfg.Overrides.Scope = ParseValueSource(v)
 	}
 
 	if v, ok := annotations[KeyValidateURL]; ok {
-		s := strings.TrimSpace(v)
-		cfg.Overrides.ValidateURL = &s
+		cfg.Overrides.ValidateURL = ParseValueSource(v)
 	}
 
 	if v, ok := annotations[KeyPKCEEnabled]; ok {
@@ -561,8 +697,7 @@ func (p *AnnotationParser) Parse(annotations map[string]string) (*Config, error)
 	}
 
 	if v, ok := annotations[KeyRedirectURL]; ok {
-		s := strings.TrimSpace(v)
-		cfg.Overrides.RedirectURL = &s
+		cfg.Overrides.RedirectURL = ParseValueSource(v)
 	}
 
 	if v, ok := annotations[KeyExtraJWTIssuers]; ok {
