@@ -24,23 +24,48 @@ Most configuration values support three source types:
 | **Environment** | `"fromEnv"` | Flag skipped; oauth2-proxy reads `OAUTH2_PROXY_*` env var at runtime |
 | **File** | `"file"` | Uses `--*-file` flag pointing to CSI-mounted file (secrets only) |
 
-### Example: Using `fromEnv`
+### Example: Using `fromEnv` with `env-secret`
 
-When you set an annotation to `"fromEnv"`, the webhook skips generating that flag. oauth2-proxy automatically reads from environment variables like `OAUTH2_PROXY_CLIENT_ID`, `OAUTH2_PROXY_OIDC_ISSUER_URL`, etc.
+When you set an annotation to `"fromEnv"`, the webhook skips generating that flag and instead creates an environment variable that reads from a Secret. You must also set `env-secret` to specify which Secret contains the values.
 
 ```yaml
 metadata:
   annotations:
     spacemule.net/oauth2-proxy.enabled: "true"
+    spacemule.net/oauth2-proxy.env-secret: "oauth2-proxy-config"
     spacemule.net/oauth2-proxy.provider: "fromEnv"
     spacemule.net/oauth2-proxy.client-id: "fromEnv"
     spacemule.net/oauth2-proxy.oidc-issuer-url: "fromEnv"
 ```
 
+The Secret should have keys matching the annotation names:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: oauth2-proxy-config
+type: Opaque
+stringData:
+  provider: "oidc"
+  client-id: "my-client-id"
+  oidc-issuer-url: "https://auth.example.com/realms/myrealm"
+```
+
+The webhook generates env vars like:
+```yaml
+env:
+- name: OAUTH2_PROXY_CLIENT_ID
+  valueFrom:
+    secretKeyRef:
+      name: oauth2-proxy-config
+      key: client-id
+```
+
 This is useful when:
-- Secrets are injected via an external secrets operator
-- Configuration comes from a Vault sidecar
-- You want oauth2-proxy to read from a pre-existing environment
+- Secrets are managed via External Secrets Operator
+- Configuration comes from a secrets management system
+- You want to decouple config from annotations
 
 ### Example: Using CSI Secrets Driver
 
@@ -104,6 +129,14 @@ Some fields are pod-specific and are used by the webhook at injection time, not 
 | `spacemule.net/oauth2-proxy.secret-provider-class` | No | - | Name of SecretProviderClass for CSI secrets driver |
 
 When set, a CSI volume is mounted at `/etc/oauth2-proxy/conf.d/`. Use `"file"` as the value for secret annotations to read from this mount.
+
+### Environment Secret Annotation
+
+| Annotation | Required | Default | Description |
+|------------|----------|---------|-------------|
+| `spacemule.net/oauth2-proxy.env-secret` | No | - | Name of Secret containing values for `"fromEnv"` fields |
+
+When set, fields with `"fromEnv"` source will generate env var entries that read from this Secret. The Secret keys should match annotation names (e.g., `client-id`, `provider`, `oidc-issuer-url`).
 
 ### Identity Override Annotations
 
