@@ -96,6 +96,7 @@ Some fields are pod-specific and are used by the webhook at injection time, not 
 - `block-direct-access` - Enable iptables protection
 - `ping-path` / `ready-path` - Health check endpoints
 - `proxy-image` - Container image to use
+- `pkce-enabled` - Boolean abstraction (use `code-challenge-method` for `fromEnv`)
 
 ## Pod Annotations
 
@@ -135,8 +136,35 @@ When set, a CSI volume is mounted at `/etc/oauth2-proxy/conf.d/`. Use `"file"` a
 | Annotation | Required | Default | Description |
 |------------|----------|---------|-------------|
 | `spacemule.net/oauth2-proxy.env-secret` | No | - | Name of Secret containing values for `"fromEnv"` fields |
+| `spacemule.net/oauth2-proxy.extra-env` | No | - | Additional env vars to inject: `"secretKey:ENV_VAR_NAME,..."` |
 
-When set, fields with `"fromEnv"` source will generate env var entries that read from this Secret. The Secret keys should match annotation names (e.g., `client-id`, `provider`, `oidc-issuer-url`).
+When `env-secret` is set, fields with `"fromEnv"` source will generate env var entries that read from this Secret. The Secret keys should match annotation names (e.g., `client-id`, `provider`, `oidc-issuer-url`).
+
+The `extra-env` annotation allows injecting arbitrary environment variables from the same Secret. These env vars are available to oauth2-proxy at runtime and can be referenced in literal annotation values using `${VAR_NAME}` syntax.
+
+**Example: Zitadel project ID for group-based access control**
+
+```yaml
+metadata:
+  annotations:
+    spacemule.net/oauth2-proxy.env-secret: "oauth2-config"
+    spacemule.net/oauth2-proxy.extra-env: "project-id:PROJECT_ID"
+    # Reference the env var in a literal annotation value
+    spacemule.net/oauth2-proxy.allowed-groups: "${PROJECT_ID}:admin,${PROJECT_ID}:family"
+    # Other config via fromEnv
+    spacemule.net/oauth2-proxy.client-id: "fromEnv"
+    spacemule.net/oauth2-proxy.oidc-issuer-url: "fromEnv"
+```
+
+Secret:
+```yaml
+stringData:
+  client-id: "123456789@my-project"
+  oidc-issuer-url: "https://my-instance.zitadel.cloud"
+  project-id: "123456789"  # Used by extra-env
+```
+
+This injects the `PROJECT_ID` env var into the oauth2-proxy container. The `allowed-groups` annotation generates `--allowed-group=${PROJECT_ID}:admin --allowed-group=${PROJECT_ID}:family`, and oauth2-proxy expands the env var at runtime to `--allowed-group=123456789:admin --allowed-group=123456789:family`.
 
 ### Identity Override Annotations
 
@@ -146,8 +174,8 @@ When set, fields with `"fromEnv"` source will generate env var entries that read
 | `spacemule.net/oauth2-proxy.client-secret-ref` | ConfigMap | `file`, `fromEnv` | Secret reference (`"secret-name"` or `"secret-name:key"`) or `"file"`/`"fromEnv"` |
 | `spacemule.net/oauth2-proxy.cookie-secret-ref` | ConfigMap | `file`, `fromEnv` | Secret reference or `"file"`/`"fromEnv"` |
 | `spacemule.net/oauth2-proxy.scope` | ConfigMap | `fromEnv` | OAuth scopes to request |
-| `spacemule.net/oauth2-proxy.pkce-enabled` | ConfigMap | `fromEnv` | Enable PKCE flow (`"true"`, `"false"`, or `"fromEnv"`) |
-| `spacemule.net/oauth2-proxy.code-challenge-method` | ConfigMap | `fromEnv` | PKCE code challenge method (`"S256"` or `"plain"`) |
+| `spacemule.net/oauth2-proxy.pkce-enabled` | ConfigMap | - | Enable PKCE flow (`"true"` or `"false"`). Sets `--code-challenge-method=S256` |
+| `spacemule.net/oauth2-proxy.code-challenge-method` | ConfigMap | `fromEnv` | PKCE code challenge method (`"S256"`, `"plain"`, or `"fromEnv"`) |
 | `spacemule.net/oauth2-proxy.validate-url` | ConfigMap | `fromEnv` | Validation URL for opaque tokens |
 
 ### Authorization Override Annotations

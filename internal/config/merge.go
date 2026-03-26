@@ -105,6 +105,7 @@ func (m *ConfigMerger) Merge(base *ProxyConfig, overrides *annotation.Config) (*
 	cfg.ReadyPath = overrides.ReadyPath
 	cfg.SecretProviderClass = overrides.SecretProviderClass
 	cfg.EnvSecret = overrides.EnvSecret
+	cfg.ExtraEnv = overrides.ExtraEnv
 
 	if err := cfg.Validate(); err != nil {
 		return nil, err

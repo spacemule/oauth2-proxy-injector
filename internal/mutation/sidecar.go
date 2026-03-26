@@ -425,6 +425,11 @@ func buildEnvVarsFromSecret(cfg *config.EffectiveConfig) []corev1.EnvVar {
 		addEnvVar("OAUTH2_PROXY_SKIP_JWT_BEARER_TOKENS", "skip-jwt-bearer-tokens")
 	}
 
+	// Extra env vars (arbitrary user-defined mappings)
+	for secretKey, envVarName := range cfg.ExtraEnv {
+		addEnvVar(envVarName, secretKey)
+	}
+
 	return ret
 }
 

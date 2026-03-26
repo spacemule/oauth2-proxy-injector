@@ -455,6 +455,11 @@ type EffectiveConfig struct {
 	// When set, fields with "fromEnv" source will generate env var entries
 	// that read from this Secret using the annotation name as the key
 	EnvSecret string
+
+	// ExtraEnv is a map of secret keys to env var names for arbitrary env var injection
+	// Used for injecting custom env vars that can be referenced in extra-args
+	// Requires EnvSecret to be set
+	ExtraEnv map[string]string
 }
 
 // Validation errors that can occur when loading config

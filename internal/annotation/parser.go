@@ -2,6 +2,7 @@ package annotation
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -247,6 +248,21 @@ const (
 	//         name: oauth2-proxy-env
 	//         key: client-id
 	KeyEnvSecret = AnnotationPrefix + "env-secret"
+
+	// KeyExtraEnv specifies additional env vars to inject from the env-secret
+	// Value: comma-separated "secretKey:ENV_VAR_NAME" pairs
+	// Example: "project-id:PROJECT_ID,custom-value:MY_CUSTOM_VAR"
+	//
+	// This allows injecting arbitrary env vars that oauth2-proxy expands at runtime.
+	// Reference them in literal annotation values using ${VAR_NAME} syntax.
+	// Requires env-secret to be set.
+	//
+	// Example usage:
+	//   annotations:
+	//     spacemule.net/oauth2-proxy.env-secret: "my-secrets"
+	//     spacemule.net/oauth2-proxy.extra-env: "project-id:PROJECT_ID"
+	//     spacemule.net/oauth2-proxy.allowed-groups: "${PROJECT_ID}:admin,${PROJECT_ID}:family"
+	KeyExtraEnv = AnnotationPrefix + "extra-env"
 )
 
 // UpstreamTLSMode represents the TLS verification mode for upstream connections
@@ -405,6 +421,41 @@ func (vs ValueSource) IsFromEnv() bool {
 	return vs.Type == ValueSourceEnv
 }
 
+// parseExtraEnv parses a "secretKey:ENV_VAR,secretKey2:ENV_VAR2" format string
+// into a map[string]string where keys are secret keys and values are env var names
+func parseExtraEnv(value string) (map[string]string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil, nil
+	}
+
+	result := make(map[string]string)
+	pairs := strings.Split(value, ",")
+
+	for _, pair := range pairs {
+		pair = strings.TrimSpace(pair)
+		if pair == "" {
+			continue
+		}
+
+		parts := strings.SplitN(pair, ":", 2)
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("invalid %s format: %q (expected secretKey:ENV_VAR_NAME)", KeyExtraEnv, pair)
+		}
+
+		secretKey := strings.TrimSpace(parts[0])
+		envVarName := strings.TrimSpace(parts[1])
+
+		if secretKey == "" || envVarName == "" {
+			return nil, fmt.Errorf("invalid %s format: %q (empty key or env var name)", KeyExtraEnv, pair)
+		}
+
+		result[secretKey] = envVarName
+	}
+
+	return result, nil
+}
+
 // Config holds parsed annotation values for a pod
 // This includes both annotation-only settings and ConfigMap overrides
 type Config struct {
@@ -427,6 +478,11 @@ type Config struct {
 	// When set, fields with "fromEnv" source will generate env var entries
 	// that read from this Secret using the annotation name as the key
 	EnvSecret string
+
+	// ExtraEnv is a map of secret keys to env var names for arbitrary env var injection
+	// Parsed from "secretKey:ENV_VAR_NAME,secretKey2:ENV_VAR_NAME2" format
+	// Requires EnvSecret to be set
+	ExtraEnv map[string]string
 
 	// ===== Pod-Specific Settings (annotation-only, no fromEnv support) =====
 	// These are inherently per-pod and wouldn't make sense to read from env vars
@@ -671,6 +727,14 @@ func (p *AnnotationParser) Parse(annotations map[string]string) (*Config, error)
 
 	if v, ok := annotations[KeyEnvSecret]; ok {
 		cfg.EnvSecret = strings.TrimSpace(v)
+	}
+
+	if v, ok := annotations[KeyExtraEnv]; ok {
+		extraEnv, err := parseExtraEnv(v)
+		if err != nil {
+			return nil, err
+		}
+		cfg.ExtraEnv = extraEnv
 	}
 
 	if v, ok := annotations[KeyUpstreamTLS]; ok {
