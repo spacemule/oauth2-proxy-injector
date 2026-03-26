@@ -4,23 +4,25 @@
 
 I'm learning Go by building a Kubernetes mutating admission webhook that injects oauth2-proxy sidecars into pods. This is a LEARNING PROJECT - I implement the code myself to learn Go concepts.
 
-## Current Status: IMPLEMENTATION IN PROGRESS
+## Current Status: CORE IMPLEMENTATION COMPLETE
 
 Completed:
-- ✅ `internal/annotation/parser.go` - fully implemented
+- ✅ `internal/annotation/parser.go` - fully implemented (with ValueSource types for fromEnv/file support)
 - ✅ `internal/mutation/patch.go` - fully implemented (fluent PatchBuilder)
-- ✅ `internal/config/types.go` - fully implemented
+- ✅ `internal/config/types.go` - fully implemented (Sourced* types for value source tracking)
 - ✅ `internal/config/loader.go` - fully implemented
-- ✅ `internal/mutation/sidecar.go` - CalculatePortMapping implemented
-
-**Next step**: `internal/mutation/sidecar.go` - remaining functions (buildProbe, buildEnvVars, buildArgs, Build)
+- ✅ `internal/config/merge.go` - fully implemented (merges ConfigMap + annotations with source tracking)
+- ✅ `internal/mutation/sidecar.go` - fully implemented (Build, buildArgs, buildEnvVars, buildProbe)
+- ✅ `internal/mutation/mutator.go` - fully implemented
+- ✅ `internal/mutation/secretprovider.go` - CSI volume/mount helpers
+- ✅ `internal/admission/handler.go` - HTTP/admission layer
+- ✅ `cmd/webhook/main.go` - wired up
+- ✅ `fromEnv` support - annotations can be set to `"fromEnv"` to skip flag generation
+- ✅ `file` support - secrets can be set to `"file"` to use CSI-mounted files
 
 Remaining:
-1. `internal/mutation/sidecar.go` - buildProbe, buildEnvVars, buildArgs, Build
-2. `internal/mutation/mutator.go` - ties everything together
-3. `internal/admission/handler.go` - HTTP/admission layer
-4. `cmd/webhook/main.go` - wire it all up
-5. Tests in `handler_test.go`
+1. Tests in `handler_test.go`
+2. Integration testing
 
 ## Core Requirements
 
@@ -678,9 +680,9 @@ Currently, only a single `protected-port` is supported due to oauth2-proxy's `--
 
 ## Current Implementation: fromEnv Support
 
-### Status: IN PROGRESS
+### Status: COMPLETE
 
-Adding `fromEnv` support for all non-pod-specific configuration fields. When an annotation value is set to `"fromEnv"`, the webhook skips generating that flag and lets oauth2-proxy read from `OAUTH2_PROXY_*` environment variables at runtime.
+Added `fromEnv` support for all non-pod-specific configuration fields. When an annotation value is set to `"fromEnv"`, the webhook skips generating that flag and lets oauth2-proxy read from `OAUTH2_PROXY_*` environment variables at runtime.
 
 ### Design
 
@@ -778,12 +780,12 @@ func (ssr SourcedSecretRef) IsLiteral() bool
 1. **`internal/annotation/parser.go`**
    - [x] Add `ValueSourceType`, `ValueSource` types
    - [x] Add `BoolValueSource`, `StringSliceValueSource` types
-   - [ ] Implement `ParseValueSource(value string) ValueSource`
-   - [ ] Implement `ParseBoolValueSource(value string) (BoolValueSource, error)`
-   - [ ] Implement `ParseStringSliceValueSource(value string) StringSliceValueSource`
+   - [x] Implement `ParseValueSource(value string) ValueSource`
+   - [x] Implement `ParseBoolValueSource(value string) (BoolValueSource, error)`
+   - [x] Implement `ParseStringSliceValueSource(value string) StringSliceValueSource`
    - [x] Update `ConfigOverrides` to use new types for all fields
-   - [ ] Update `Parse()` function to use new parse functions (BROKEN - needs fixing)
-   - [ ] Remove `SkipJWTBearerTokens` from `Config` struct (moved to `ConfigOverrides`)
+   - [x] Update `Parse()` function to use new parse functions (BROKEN - needs fixing)
+   - [x] Remove `SkipJWTBearerTokens` from `Config` struct (moved to `ConfigOverrides`)
 
 2. **`internal/config/types.go`**
    - [x] Add `SourcedValue`, `SourcedBool`, `SourcedStringSlice`, `SourcedSecretRef` types
@@ -791,20 +793,18 @@ func (ssr SourcedSecretRef) IsLiteral() bool
    - [x] Update `EffectiveConfig` to use `Sourced*` types for all non-pod-specific fields
 
 3. **`internal/config/merge.go`**
-   - [ ] Implement `mergeSourcedValue(base string, override ValueSource) SourcedValue`
-   - [ ] Implement `mergeSourcedBool(base bool, override BoolValueSource) SourcedBool`
-   - [ ] Implement `mergeSourcedStringSlice(base []string, override StringSliceValueSource) SourcedStringSlice`
-   - [ ] Implement `mergeSourcedSecretRef(base *SecretRef, override ValueSource, defaultKey string) (SourcedSecretRef, error)`
-   - [ ] Update `Merge()` to use new merge functions for all fields
-   - [ ] Update `Validate()` to skip validation when source is `fromEnv`
-   - [ ] Update `String()` for logging
+   - [x] Implement `mergeSourcedValue(base string, override ValueSource) SourcedValue`
+   - [x] Implement `mergeSourcedBool(base bool, override BoolValueSource) SourcedBool`
+   - [x] Implement `mergeSourcedStringSlice(base []string, override StringSliceValueSource) SourcedStringSlice`
+   - [x] Implement `mergeSourcedSecretRef(base *SecretRef, override ValueSource, defaultKey string) (SourcedSecretRef, error)`
+   - [x] Update `Merge()` to use new merge functions for all fields
+   - [x] Update `Validate()` to skip validation when source is `fromEnv`
+   - [X] Update `String()` for logging
 
 4. **`internal/mutation/sidecar.go`**
-   - [ ] Update `buildArgs()` to check `IsFromEnv()` for ALL fields before adding flags
-   - [ ] Update `buildEnvVars()` to check source types for secrets
-   - [ ] Add helper: `appendIfLiteral(args *[]string, flag string, sv SourcedValue)`
-   - [ ] Add helper: `appendBoolIfLiteral(args *[]string, flag string, sb SourcedBool)`
-   - [ ] Add helper: `appendSliceIfLiteral(args *[]string, flag string, ss SourcedStringSlice)`
+   - [x] Update `buildArgs()` to check `IsFromEnv()` for ALL fields before adding flags
+   - [x] Update `buildEnvVars()` to check source types for secrets
+   - [x] Update `Build()` to add CSI volume/mount when SecretProviderClass is set
 
 5. **Tests**
    - [ ] Unit tests for `ParseValueSource`, `ParseBoolValueSource`, `ParseStringSliceValueSource`

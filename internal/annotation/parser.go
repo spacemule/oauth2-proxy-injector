@@ -280,14 +280,15 @@ type ValueSource struct {
 //   - "file"    -> ValueSource{Type: ValueSourceFile}
 //   - "fromEnv" -> ValueSource{Type: ValueSourceEnv}
 //   - anything else -> ValueSource{Type: ValueSourceLiteral, Value: <the value>}
-//
-// TODO:
-// 1. Trim whitespace from value
-// 2. Check if value == "file" -> return ValueSource{Type: ValueSourceFile}
-// 3. Check if value == "fromEnv" -> return ValueSource{Type: ValueSourceEnv}
-// 4. Otherwise -> return ValueSource{Type: ValueSourceLiteral, Value: value}
 func ParseValueSource(value string) ValueSource {
-	panic("TODO: implement")
+	switch value {
+	case "file":
+		return ValueSource{Type: ValueSourceFile}
+	case "fromEnv":
+		return ValueSource{Type: ValueSourceEnv}
+	default:
+		return ValueSource{Type: ValueSourceLiteral, Value: value}
+	}
 }
 
 // BoolValueSource represents a boolean configuration value with its source type
@@ -307,14 +308,27 @@ func (bvs BoolValueSource) IsSet() bool {
 //   - "fromEnv" -> BoolValueSource{Type: ValueSourceEnv}
 //   - "true"/"1" -> BoolValueSource{Type: ValueSourceLiteral, Value: true}
 //   - "false"/"0" -> BoolValueSource{Type: ValueSourceLiteral, Value: false}
-//
-// TODO:
-// 1. Trim whitespace from value
-// 2. Check if value == "fromEnv" -> return BoolValueSource{Type: ValueSourceEnv}
-// 3. Parse as bool ("true"/"1" -> true, "false"/"0" -> false)
-// 4. Return BoolValueSource{Type: ValueSourceLiteral, Value: parsed}
 func ParseBoolValueSource(value string) (BoolValueSource, error) {
-	panic("TODO: implement")
+	var parsed bool
+	if value == "fromEnv" {
+		return BoolValueSource{Type: ValueSourceEnv}, nil
+	}
+	switch strings.ToLower(value) {
+	case "true":
+		parsed = true
+	case "false":
+		parsed = false
+	case "1":
+		parsed = true
+	case "0":
+		parsed = false
+	default:
+		return BoolValueSource{}, fmt.Errorf("invalid boolean value %q", value)
+	}
+	return BoolValueSource{
+		Type: ValueSourceLiteral,
+		Value: parsed,
+	}, nil
 }
 
 // StringSliceValueSource represents a string slice configuration value with its source type
@@ -333,14 +347,23 @@ func (ssvs StringSliceValueSource) IsSet() bool {
 // Supported formats:
 //   - "fromEnv" -> StringSliceValueSource{Type: ValueSourceEnv}
 //   - comma-separated values -> StringSliceValueSource{Type: ValueSourceLiteral, Values: [...]}
-//
-// TODO:
-// 1. Trim whitespace from value
-// 2. Check if value == "fromEnv" -> return StringSliceValueSource{Type: ValueSourceEnv}
-// 3. Split by comma and trim each value
-// 4. Return StringSliceValueSource{Type: ValueSourceLiteral, Values: parsed}
 func ParseStringSliceValueSource(value string) StringSliceValueSource {
-	panic("TODO: implement")
+	if value == "fromEnv" {
+		return StringSliceValueSource{Type: ValueSourceEnv}
+	}
+	parsed := []string{}
+
+	splits := strings.Split(value, ",")
+	for _, split := range splits {
+		if trimmed := strings.TrimSpace(split); trimmed != "" {
+			parsed = append(parsed, trimmed)
+		}
+	}
+
+	return StringSliceValueSource{
+		Type: ValueSourceLiteral,
+		Values: parsed,
+	}
 }
 
 // IsSet returns true if this ValueSource was explicitly set (not zero value)
@@ -515,7 +538,9 @@ type ConfigOverrides struct {
 	// ===== Container Overrides =====
 
 	// ProxyImage overrides the oauth2-proxy container image
-	ProxyImage ValueSource
+	// This is a plain *string (not ValueSource) because it's used at pod creation
+	// time by the webhook, not by oauth2-proxy at runtime. "fromEnv" makes no sense here.
+	ProxyImage *string
 }
 
 // Parser defines the interface for parsing pod annotations
@@ -537,7 +562,6 @@ func (p *AnnotationParser) Parse(annotations map[string]string) (*Config, error)
 		cfg *Config = &Config{
 			IgnorePaths:         []string{},
 			APIPaths:            []string{},
-			SkipJWTBearerTokens: false,
 			UpstreamTLS:         UpstreamNoTLS,
 			Overrides:           ConfigOverrides{},
 		}
@@ -567,8 +591,7 @@ func (p *AnnotationParser) Parse(annotations map[string]string) (*Config, error)
 	}
 
 	if v, ok := annotations[KeyOIDCGroupsClaim]; ok {
-		s := strings.TrimSpace(v)
-		cfg.Overrides.OIDCGroupsClaim = &s
+		cfg.Overrides.OIDCGroupsClaim = ParseValueSource(strings.TrimSpace(v))
 	}
 
 	if v, ok := annotations[KeyProxyImage]; ok {
@@ -589,7 +612,7 @@ func (p *AnnotationParser) Parse(annotations map[string]string) (*Config, error)
 	}
 
 	if v, ok := annotations[KeyCookieSecure]; ok {
-		b, err := parseBoolPtr(v)
+		b, err := ParseBoolValueSource(v)
 		if err != nil {
 			return nil, err
 		}
@@ -609,14 +632,11 @@ func (p *AnnotationParser) Parse(annotations map[string]string) (*Config, error)
 	}
 
 	if v, ok := annotations[KeySkipJWTBearerTokens]; ok {
-		switch strings.ToLower(strings.TrimSpace(v)) {
-		case "true", "1":
-			cfg.SkipJWTBearerTokens = true
-		case "false", "0":
-			cfg.SkipJWTBearerTokens = false
-		default:
-			return nil, fmt.Errorf("invalid skip-jwt value: %q (must be 'true', 'false', '1', or '0')", v)
+		b, err := ParseBoolValueSource(v)
+		if err != nil {
+			return nil, err
 		}
+		cfg.Overrides.SkipJWTBearerTokens = b
 	}
 
 	if v, ok := annotations[KeySecretProviderClass]; ok {
@@ -651,7 +671,7 @@ func (p *AnnotationParser) Parse(annotations map[string]string) (*Config, error)
 	}
 
 	if v, ok := annotations[KeyPKCEEnabled]; ok {
-		b, err := parseBoolPtr(v)
+		b, err := ParseBoolValueSource(v)
 		if err != nil {
 			return nil, err
 		}
@@ -659,21 +679,15 @@ func (p *AnnotationParser) Parse(annotations map[string]string) (*Config, error)
 	}
 
 	if v, ok := annotations[KeyCodeChallengeMethod]; ok {
-		s := strings.TrimSpace(v)
-		if s != "S256" && s != "plain" {
-			return nil, fmt.Errorf("invalid code-challenge-method value: %q (must be 'S256' or 'plain')", v)
-		}
-		cfg.Overrides.CodeChallengeMethod = &s
+		cfg.Overrides.CodeChallengeMethod = ParseValueSource(strings.TrimSpace(v))
 	}
 
 	if v, ok := annotations[KeyEmailDomains]; ok {
-		cfg.Overrides.EmailDomains = parsePaths(v)
-		cfg.Overrides.EmailDomainsSet = true
+		cfg.Overrides.EmailDomains = ParseStringSliceValueSource(v)
 	}
 
 	if v, ok := annotations[KeyAllowedGroups]; ok {
-		cfg.Overrides.AllowedGroups = parsePaths(v)
-		cfg.Overrides.AllowedGroupsSet = true
+		cfg.Overrides.AllowedGroups = ParseStringSliceValueSource(v)
 	}
 
 	// if v, ok := annotations[KeyAllowedEmails]; ok {
@@ -682,18 +696,15 @@ func (p *AnnotationParser) Parse(annotations map[string]string) (*Config, error)
 	// }
 
 	if v, ok := annotations[KeyWhitelistDomains]; ok {
-		cfg.Overrides.WhitelistDomains = parsePaths(v)
-		cfg.Overrides.WhitelistDomainsSet = true
+		cfg.Overrides.WhitelistDomains = ParseStringSliceValueSource(v)
 	}
 
 	if v, ok := annotations[KeyCookieName]; ok {
-		s := strings.TrimSpace(v)
-		cfg.Overrides.CookieName = &s
+		cfg.Overrides.CookieName = ParseValueSource(strings.TrimSpace(v))
 	}
 
 	if v, ok := annotations[KeyCookieDomains]; ok {
-		cfg.Overrides.CookieDomains = parsePaths(v)
-		cfg.Overrides.CookieDomainsSet = true
+		cfg.Overrides.CookieDomains = ParseStringSliceValueSource(v)
 	}
 
 	if v, ok := annotations[KeyRedirectURL]; ok {
@@ -701,12 +712,11 @@ func (p *AnnotationParser) Parse(annotations map[string]string) (*Config, error)
 	}
 
 	if v, ok := annotations[KeyExtraJWTIssuers]; ok {
-		cfg.Overrides.ExtraJWTIssuers = parsePaths(v)
-		cfg.Overrides.ExtraJWTIssuersSet = true
+		cfg.Overrides.ExtraJWTIssuers = ParseStringSliceValueSource(v)
 	}
 
 	if v, ok := annotations[KeyPassAccessToken]; ok {
-		b, err := parseBoolPtr(v)
+		b, err := ParseBoolValueSource(v)
 		if err != nil {
 			return nil, err
 		}
@@ -714,7 +724,7 @@ func (p *AnnotationParser) Parse(annotations map[string]string) (*Config, error)
 	}
 
 	if v, ok := annotations[KeySetXAuthRequest]; ok {
-		b, err := parseBoolPtr(v)
+		b, err := ParseBoolValueSource(v)
 		if err != nil {
 			return nil, err
 		}
@@ -722,7 +732,7 @@ func (p *AnnotationParser) Parse(annotations map[string]string) (*Config, error)
 	}
 
 	if v, ok := annotations[KeyPassAuthorizationHeader]; ok {
-		b, err := parseBoolPtr(v)
+		b, err := ParseBoolValueSource(v)
 		if err != nil {
 			return nil, err
 		}
@@ -730,7 +740,7 @@ func (p *AnnotationParser) Parse(annotations map[string]string) (*Config, error)
 	}
 
 	if v, ok := annotations[KeySkipProviderButton]; ok {
-		b, err := parseBoolPtr(v)
+		b, err := ParseBoolValueSource(v)
 		if err != nil {
 			return nil, err
 		}

@@ -420,9 +420,11 @@ type EffectiveConfig struct {
 	SkipProviderButton  SourcedBool
 	SkipJWTBearerTokens SourcedBool
 
-	// ===== Container Settings (merged, supports fromEnv) =====
+	// ===== Container Settings =====
 
-	ProxyImage     SourcedValue
+	// ProxyImage is the oauth2-proxy container image (plain string, no fromEnv)
+	// This is used by the webhook at pod creation time, not by oauth2-proxy at runtime
+	ProxyImage     string
 	ExtraArgs      []string                    // ConfigMap only, no fromEnv
 	ProxyResources *corev1.ResourceRequirements // ConfigMap only
 

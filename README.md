@@ -1,14 +1,76 @@
 # oauth2-proxy-injector
 
-More documentation to follow.
+A Kubernetes mutating admission webhook that injects oauth2-proxy sidecars into pods for authentication.
 
-I used Claude to teach me go. Claude scaffolded this project, but all the code was human-written.
+I used Claude to teach me Go. Claude scaffolded this project, but as of 26 March 2026, some contributions (grunt work, mainly) are offloaded to Claude. All was reviewed, but I am a beginner. Don't use this for security critical purposes if you haven't reviewed it.
 
-See Claude.md and the deploy directory for an idea of how to configure.
+See CLAUDE.md and the deploy directory for configuration details.
 
-The mutating webhook adds a sidecar running oauth2-proxy targeting the named port (the service must also target the port by name at this point) in properly annotated pods. It adds easy authentication to services without having to edit existing helm-charts or manually add sidecars to manifests.
+## Overview
 
-Configuration is done in via configmap for non-sensitive values that are stable across services and via annotation for service-specific configurations.
+The mutating webhook adds a sidecar running oauth2-proxy targeting the named port (the service must also target the port by name) in properly annotated pods. It adds easy authentication to services without having to edit existing helm-charts or manually add sidecars to manifests.
+
+Configuration is done via:
+- **ConfigMap**: Non-sensitive values shared across services in a namespace
+- **Annotations**: Service-specific configurations and overrides
+
+## Value Sources
+
+Most configuration values support three source types:
+
+| Source | Annotation Value | Description |
+|--------|-----------------|-------------|
+| **Literal** | `"my-value"` | Value passed directly as `--flag=my-value` |
+| **Environment** | `"fromEnv"` | Flag skipped; oauth2-proxy reads `OAUTH2_PROXY_*` env var at runtime |
+| **File** | `"file"` | Uses `--*-file` flag pointing to CSI-mounted file (secrets only) |
+
+### Example: Using `fromEnv`
+
+When you set an annotation to `"fromEnv"`, the webhook skips generating that flag. oauth2-proxy automatically reads from environment variables like `OAUTH2_PROXY_CLIENT_ID`, `OAUTH2_PROXY_OIDC_ISSUER_URL`, etc.
+
+```yaml
+metadata:
+  annotations:
+    spacemule.net/oauth2-proxy.enabled: "true"
+    spacemule.net/oauth2-proxy.provider: "fromEnv"
+    spacemule.net/oauth2-proxy.client-id: "fromEnv"
+    spacemule.net/oauth2-proxy.oidc-issuer-url: "fromEnv"
+```
+
+This is useful when:
+- Secrets are injected via an external secrets operator
+- Configuration comes from a Vault sidecar
+- You want oauth2-proxy to read from a pre-existing environment
+
+### Example: Using CSI Secrets Driver
+
+For secrets via CSI (e.g., Vault CSI Provider, Azure Key Vault), use `"file"` for secrets and specify the `SecretProviderClass`:
+
+```yaml
+metadata:
+  annotations:
+    spacemule.net/oauth2-proxy.enabled: "true"
+    spacemule.net/oauth2-proxy.secret-provider-class: "vault-oauth2-secrets"
+    spacemule.net/oauth2-proxy.client-secret: "file"
+    spacemule.net/oauth2-proxy.cookie-secret: "file"
+    # Other config can be literal or fromEnv
+    spacemule.net/oauth2-proxy.client-id: "my-client"
+    spacemule.net/oauth2-proxy.provider: "oidc"
+```
+
+The CSI volume is mounted at `/etc/oauth2-proxy/conf.d/` and secrets are read via `--client-secret-file` and `--cookie-secret-file` flags.
+
+### Fields That Don't Support `fromEnv`
+
+Some fields are pod-specific and are used by the webhook at injection time, not by oauth2-proxy at runtime:
+
+- `protected-port` - Which port to proxy
+- `upstream-tls` - TLS mode for upstream connection
+- `ignore-paths` - Paths to skip authentication
+- `api-paths` - Paths requiring JWT only
+- `block-direct-access` - Enable iptables protection
+- `ping-path` / `ready-path` - Health check endpoints
+- `proxy-image` - Container image to use
 
 ## Pod Annotations
 
@@ -35,66 +97,77 @@ Configuration is done in via configmap for non-sensitive values that are stable 
 
 *Either `protected-port` or `upstream` must be set.
 
+### Secret Provider Class Annotation
+
+| Annotation | Required | Default | Description |
+|------------|----------|---------|-------------|
+| `spacemule.net/oauth2-proxy.secret-provider-class` | No | - | Name of SecretProviderClass for CSI secrets driver |
+
+When set, a CSI volume is mounted at `/etc/oauth2-proxy/conf.d/`. Use `"file"` as the value for secret annotations to read from this mount.
+
 ### Identity Override Annotations
 
-| Annotation | Default | Description |
-|------------|---------|-------------|
-| `spacemule.net/oauth2-proxy.client-id` | ConfigMap | OAuth2 client ID |
-| `spacemule.net/oauth2-proxy.client-secret-ref` | ConfigMap | Secret reference for client secret (`"secret-name"` or `"secret-name:key"`) |
-| `spacemule.net/oauth2-proxy.cookie-secret-ref` | ConfigMap | Secret reference for cookie secret |
-| `spacemule.net/oauth2-proxy.scope` | ConfigMap | OAuth scopes to request |
-| `spacemule.net/oauth2-proxy.pkce-enabled` | ConfigMap | Enable PKCE flow (`"true"` or `"false"`) |
+| Annotation | Default | Supports | Description |
+|------------|---------|----------|-------------|
+| `spacemule.net/oauth2-proxy.client-id` | ConfigMap | `fromEnv` | OAuth2 client ID |
+| `spacemule.net/oauth2-proxy.client-secret-ref` | ConfigMap | `file`, `fromEnv` | Secret reference (`"secret-name"` or `"secret-name:key"`) or `"file"`/`"fromEnv"` |
+| `spacemule.net/oauth2-proxy.cookie-secret-ref` | ConfigMap | `file`, `fromEnv` | Secret reference or `"file"`/`"fromEnv"` |
+| `spacemule.net/oauth2-proxy.scope` | ConfigMap | `fromEnv` | OAuth scopes to request |
+| `spacemule.net/oauth2-proxy.pkce-enabled` | ConfigMap | `fromEnv` | Enable PKCE flow (`"true"`, `"false"`, or `"fromEnv"`) |
+| `spacemule.net/oauth2-proxy.code-challenge-method` | ConfigMap | `fromEnv` | PKCE code challenge method (`"S256"` or `"plain"`) |
+| `spacemule.net/oauth2-proxy.validate-url` | ConfigMap | `fromEnv` | Validation URL for opaque tokens |
 
 ### Authorization Override Annotations
 
-| Annotation | Default | Description |
-|------------|---------|-------------|
-| `spacemule.net/oauth2-proxy.email-domains` | ConfigMap | Comma-separated allowed email domains. Use `"*"` for all |
-| `spacemule.net/oauth2-proxy.allowed-groups` | ConfigMap | Comma-separated allowed groups |
-| `spacemule.net/oauth2-proxy.whitelist-domains` | ConfigMap | Comma-separated domains allowed for post-auth redirects |
+| Annotation | Default | Supports | Description |
+|------------|---------|----------|-------------|
+| `spacemule.net/oauth2-proxy.email-domains` | ConfigMap | `fromEnv` | Comma-separated allowed email domains. Use `"*"` for all |
+| `spacemule.net/oauth2-proxy.allowed-groups` | ConfigMap | `fromEnv` | Comma-separated allowed groups |
+| `spacemule.net/oauth2-proxy.whitelist-domains` | ConfigMap | `fromEnv` | Comma-separated domains allowed for post-auth redirects |
 
 ### Cookie Override Annotations
 
-| Annotation | Default | Description |
-|------------|---------|-------------|
-| `spacemule.net/oauth2-proxy.cookie-name` | ConfigMap | Cookie name (useful to prevent collisions) |
-| `spacemule.net/oauth2-proxy.cookie-domains` | ConfigMap | Comma-separated cookie domains |
-| `spacemule.net/oauth2-proxy.cookie-secure` | ConfigMap | Require HTTPS for cookies (`"true"` or `"false"`) |
+| Annotation | Default | Supports | Description |
+|------------|---------|----------|-------------|
+| `spacemule.net/oauth2-proxy.cookie-name` | ConfigMap | `fromEnv` | Cookie name (useful to prevent collisions) |
+| `spacemule.net/oauth2-proxy.cookie-domains` | ConfigMap | `fromEnv` | Comma-separated cookie domains |
+| `spacemule.net/oauth2-proxy.cookie-secure` | ConfigMap | `fromEnv` | Require HTTPS for cookies (`"true"`, `"false"`, or `"fromEnv"`) |
 
 ### Routing Override Annotations
 
-| Annotation | Default | Description |
-|------------|---------|-------------|
-| `spacemule.net/oauth2-proxy.redirect-url` | ConfigMap | OAuth callback URL (usually per-service) |
-| `spacemule.net/oauth2-proxy.extra-jwt-issuers` | ConfigMap | Comma-separated `issuer=audience` pairs |
+| Annotation | Default | Supports | Description |
+|------------|---------|----------|-------------|
+| `spacemule.net/oauth2-proxy.redirect-url` | ConfigMap | `fromEnv` | OAuth callback URL (usually per-service) |
+| `spacemule.net/oauth2-proxy.extra-jwt-issuers` | ConfigMap | `fromEnv` | Comma-separated `issuer=audience` pairs |
 
 ### Header Override Annotations
 
-| Annotation | Default | Description |
-|------------|---------|-------------|
-| `spacemule.net/oauth2-proxy.pass-access-token` | ConfigMap | Pass OAuth access token via `X-Forwarded-Access-Token` |
-| `spacemule.net/oauth2-proxy.set-xauthrequest` | ConfigMap | Set `X-Auth-Request-User` and `X-Auth-Request-Email` headers |
-| `spacemule.net/oauth2-proxy.pass-authorization-header` | ConfigMap | Pass OIDC ID token via `Authorization: Bearer` header |
+| Annotation | Default | Supports | Description |
+|------------|---------|----------|-------------|
+| `spacemule.net/oauth2-proxy.pass-access-token` | ConfigMap | `fromEnv` | Pass OAuth access token via `X-Forwarded-Access-Token` |
+| `spacemule.net/oauth2-proxy.set-xauthrequest` | ConfigMap | `fromEnv` | Set `X-Auth-Request-User` and `X-Auth-Request-Email` headers |
+| `spacemule.net/oauth2-proxy.pass-authorization-header` | ConfigMap | `fromEnv` | Pass OIDC ID token via `Authorization: Bearer` header |
 
 ### Behavior Override Annotations
 
-| Annotation | Default | Description |
-|------------|---------|-------------|
-| `spacemule.net/oauth2-proxy.skip-provider-button` | ConfigMap | Skip "Sign in with X" button, redirect directly |
+| Annotation | Default | Supports | Description |
+|------------|---------|----------|-------------|
+| `spacemule.net/oauth2-proxy.skip-provider-button` | ConfigMap | `fromEnv` | Skip "Sign in with X" button, redirect directly |
+| `spacemule.net/oauth2-proxy.skip-jwt-bearer-tokens` | `"false"` | `fromEnv` | Skip login when valid JWT bearer token is provided |
 
 ### Provider Override Annotations
 
-| Annotation | Default | Description |
-|------------|---------|-------------|
-| `spacemule.net/oauth2-proxy.provider` | ConfigMap | OAuth2 provider type (`"oidc"`, `"google"`, `"github"`, etc.) |
-| `spacemule.net/oauth2-proxy.oidc-issuer-url` | ConfigMap | OIDC issuer URL |
-| `spacemule.net/oauth2-proxy.oidc-groups-claim` | ConfigMap | OIDC claim containing group membership |
+| Annotation | Default | Supports | Description |
+|------------|---------|----------|-------------|
+| `spacemule.net/oauth2-proxy.provider` | ConfigMap | `fromEnv` | OAuth2 provider type (`"oidc"`, `"google"`, `"github"`, etc.) |
+| `spacemule.net/oauth2-proxy.oidc-issuer-url` | ConfigMap | `fromEnv` | OIDC issuer URL |
+| `spacemule.net/oauth2-proxy.oidc-groups-claim` | ConfigMap | `fromEnv` | OIDC claim containing group membership |
 
 ### Container Override Annotations
 
-| Annotation | Default | Description |
-|------------|---------|-------------|
-| `spacemule.net/oauth2-proxy.proxy-image` | ConfigMap | oauth2-proxy container image |
+| Annotation | Default | Supports | Description |
+|------------|---------|----------|-------------|
+| `spacemule.net/oauth2-proxy.proxy-image` | ConfigMap | - | oauth2-proxy container image (no `fromEnv` - used at injection time) |
 
 ## ConfigMap Keys
 
@@ -187,6 +260,35 @@ For Service mutation webhook (used with numbered port mode):
 | `spacemule.net/oauth2-proxy.proxy-port` | No | `"4180"` | Port where oauth2-proxy listens |
 
 
-TOCHECK:
+## Full Example: CSI Secrets with Vault
 
-Add paths for rewritten healthchecks
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  annotations:
+    # Enable injection
+    spacemule.net/oauth2-proxy.enabled: "true"
+
+    # Use Vault CSI driver for secrets
+    spacemule.net/oauth2-proxy.secret-provider-class: "vault-oauth2"
+    spacemule.net/oauth2-proxy.client-secret: "file"
+    spacemule.net/oauth2-proxy.cookie-secret: "file"
+
+    # Non-secret config via fromEnv (injected by Vault Agent)
+    spacemule.net/oauth2-proxy.provider: "fromEnv"
+    spacemule.net/oauth2-proxy.oidc-issuer-url: "fromEnv"
+    spacemule.net/oauth2-proxy.client-id: "fromEnv"
+
+    # Pod-specific settings (literal values)
+    spacemule.net/oauth2-proxy.protected-port: "http"
+    spacemule.net/oauth2-proxy.redirect-url: "https://myapp.example.com/oauth2/callback"
+    spacemule.net/oauth2-proxy.ignore-paths: "/health,/metrics"
+spec:
+  containers:
+  - name: app
+    image: myapp:latest
+    ports:
+    - name: http
+      containerPort: 8080
+```

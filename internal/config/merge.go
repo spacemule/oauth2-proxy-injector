@@ -33,15 +33,6 @@ func NewMerger() *ConfigMerger {
 // For fields that support ValueSource (file, fromEnv, literal):
 //   - If annotation has ValueSource set, use its type and value
 //   - If annotation is not set, use ConfigMap value with ValueSourceLiteral
-//
-// TODO:
-// 1. For each SourcedValue field, call mergeSourcedValue helper
-// 2. mergeSourcedValue should:
-//    a. If override.IsSet() -> return SourcedValue{Value: override.Value, Source: override.Type}
-//    b. Else -> return SourcedValue{Value: base, Source: ValueSourceLiteral}
-// 3. For SourcedSecretRef fields:
-//    a. If source is ValueSourceLiteral -> parse as SecretRef
-//    b. If source is ValueSourceFile or ValueSourceEnv -> set source type, leave Ref nil
 func (m *ConfigMerger) Merge(base *ProxyConfig, overrides *annotation.Config) (*EffectiveConfig, error) {
 	cfg := &EffectiveConfig{
 		ConfigMapName:      base.Name,
@@ -79,7 +70,7 @@ func (m *ConfigMerger) Merge(base *ProxyConfig, overrides *annotation.Config) (*
 	// Cookie settings
 	cfg.CookieSecure = mergeSourcedBool(base.CookieSecure, overrides.Overrides.CookieSecure)
 	cfg.CookieName = mergeSourcedValue(base.CookieName, overrides.Overrides.CookieName)
-	cfg.CookieDomains = mergeSourcedStringSlice(base.CookieDomains, overrides.Overrides.CookieDomains, overrides.Overrides.CookieDomainsSet)
+	cfg.CookieDomains = mergeSourcedStringSlice(base.CookieDomains, overrides.Overrides.CookieDomains)
 
 	// Container settings
 	cfg.ProxyImage = mergeString(base.ProxyImage, overrides.Overrides.ProxyImage)
@@ -93,11 +84,10 @@ func (m *ConfigMerger) Merge(base *ProxyConfig, overrides *annotation.Config) (*
 	cfg.SetXAuthRequest = mergeSourcedBool(base.SetXAuthRequest, overrides.Overrides.SetXAuthRequest)
 	cfg.PassAuthorizationHeader = mergeSourcedBool(base.PassAuthorizationHeader, overrides.Overrides.PassAuthorizationHeader)
 	cfg.SkipProviderButton = mergeSourcedBool(base.SkipProviderButton, overrides.Overrides.SkipProviderButton)
-	cfg.WhitelistDomains = mergeSourcedStringSlice(base.WhitelistDomains, overrides.Overrides.WhitelistDomains, overrides.Overrides.WhitelistDomainsSet)
-	cfg.EmailDomains = mergeSourcedStringSlice(base.EmailDomains, overrides.Overrides.EmailDomains, overrides.Overrides.EmailDomainsSet)
-	cfg.AllowedGroups = mergeSourcedStringSlice(base.AllowedGroups, overrides.Overrides.AllowedGroups, overrides.Overrides.AllowedGroupsSet)
-	// cfg.AllowedEmails = mergeStringSlice(base.AllowedEmails, overrides.Overrides.AllowedEmails, overrides.Overrides.AllowedEmailsSet)
-	cfg.ExtraJWTIssuers = mergeSourcedStringSlice(base.ExtraJWTIssuers, overrides.Overrides.ExtraJWTIssuers, overrides.Overrides.ExtraJWTIssuersSet)
+	cfg.WhitelistDomains = mergeSourcedStringSlice(base.WhitelistDomains, overrides.Overrides.WhitelistDomains)
+	cfg.EmailDomains = mergeSourcedStringSlice(base.EmailDomains, overrides.Overrides.EmailDomains)
+	cfg.AllowedGroups = mergeSourcedStringSlice(base.AllowedGroups, overrides.Overrides.AllowedGroups)
+	cfg.ExtraJWTIssuers = mergeSourcedStringSlice(base.ExtraJWTIssuers, overrides.Overrides.ExtraJWTIssuers)
 
 	// Annotation-only settings
 	cfg.BlockDirectAccess = overrides.BlockDirectAccess
@@ -215,29 +205,6 @@ func mergeSourcedStringSlice(base []string, override annotation.StringSliceValue
 	}
 }
 
-// mergeBool returns override if non-nil, otherwise base
-func mergeBool(base bool, override *bool) bool {
-	if override != nil {
-		return *override
-	}
-	return base
-}
-
-// mergeStringSlice returns override if set flag is true, otherwise base
-func mergeStringSlice(base []string, override []string, overrideSet bool) []string {
-	if overrideSet {
-		return override
-	}
-	return base
-}
-
-// mergeSecretRef parses and returns override if non-nil, otherwise base
-func mergeSecretRef(base *SecretRef, override *string, defaultKey string) (*SecretRef, error) {
-	if override == nil {
-		return base, nil
-	}
-	return parseSecretRef(*override, defaultKey)
-}
 
 // Validate checks that the EffectiveConfig is valid and complete
 //
@@ -276,7 +243,7 @@ func (cfg *EffectiveConfig) Validate() error {
 	// Secret validations - skip when using SecretProviderClass or non-literal sources
 	if cfg.SecretProviderClass == "" {
 		// Client secret: required unless PKCE enabled OR source is file/env
-		if !cfg.PKCEEnabled && cfg.ClientSecret.Ref == nil && cfg.ClientSecret.IsLiteral() {
+		if !cfg.PKCEEnabled.Value && cfg.ClientSecret.Ref == nil && cfg.ClientSecret.IsLiteral() {
 			return fmt.Errorf("\npkce must be enabled or client-secret-ref provided")
 		}
 
@@ -293,8 +260,8 @@ func (cfg *EffectiveConfig) Validate() error {
 		}
 	}
 
-	if cfg.ExtraJWTIssuers != nil {
-		for _, v := range cfg.ExtraJWTIssuers {
+	if cfg.ExtraJWTIssuers.IsLiteral() && len(cfg.ExtraJWTIssuers.Values) > 0 {
+		for _, v := range cfg.ExtraJWTIssuers.Values {
 			parts := strings.Split(v, "=")
 			if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 				return fmt.Errorf("\ninvalid extra-jwt-issuer format")
@@ -333,8 +300,8 @@ func (cfg *EffectiveConfig) String() string {
 		builder.WriteString(fmt.Sprintf("cookie-secret-ref=%s:%s, ", cfg.CookieSecret.Ref.Name, cfg.CookieSecret.Ref.Key))
 	}
 	builder.WriteString(fmt.Sprintf("protected-port=%s, ", cfg.ProtectedPort))
-	builder.WriteString(fmt.Sprintf("allowed-groups=[%s], ", strings.Join(cfg.AllowedGroups, ",")))
-	builder.WriteString(fmt.Sprintf("email-domains=[%s]", strings.Join(cfg.EmailDomains, ",")))
+	builder.WriteString(fmt.Sprintf("allowed-groups=[%s], ", strings.Join(cfg.AllowedGroups.Values, ",")))
+	builder.WriteString(fmt.Sprintf("email-domains=[%s]", strings.Join(cfg.EmailDomains.Values, ",")))
 	if cfg.RedirectURL.Value != "" {
 		builder.WriteString(fmt.Sprintf(", redirect-url=%s", cfg.RedirectURL.Value))
 	}
