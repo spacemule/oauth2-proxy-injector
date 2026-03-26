@@ -160,6 +160,85 @@ type SecretRef struct {
 	Key string
 }
 
+// SourcedValue holds a string value along with its source type
+// This allows tracking whether a value is literal, from env, or from file
+type SourcedValue struct {
+	Value  string
+	Source annotation.ValueSourceType
+}
+
+// IsFromEnv returns true if oauth2-proxy should read this from env vars
+func (sv SourcedValue) IsFromEnv() bool {
+	return sv.Source == annotation.ValueSourceEnv
+}
+
+// IsFromFile returns true if this should be read from a CSI-mounted file
+func (sv SourcedValue) IsFromFile() bool {
+	return sv.Source == annotation.ValueSourceFile
+}
+
+// IsLiteral returns true if this is a literal value (or unset, defaulting to literal)
+func (sv SourcedValue) IsLiteral() bool {
+	return sv.Source == annotation.ValueSourceLiteral || sv.Source == ""
+}
+
+// SourcedSecretRef holds a SecretRef along with its source type
+// When Source is ValueSourceFile or ValueSourceEnv, Ref will be nil
+type SourcedSecretRef struct {
+	Ref    *SecretRef
+	Source annotation.ValueSourceType
+}
+
+// IsFromEnv returns true if oauth2-proxy should read this from env vars
+func (ssr SourcedSecretRef) IsFromEnv() bool {
+	return ssr.Source == annotation.ValueSourceEnv
+}
+
+// IsFromFile returns true if this should be read from a CSI-mounted file
+func (ssr SourcedSecretRef) IsFromFile() bool {
+	return ssr.Source == annotation.ValueSourceFile
+}
+
+// IsLiteral returns true if this uses a SecretRef (or unset, defaulting to literal)
+func (ssr SourcedSecretRef) IsLiteral() bool {
+	return ssr.Source == annotation.ValueSourceLiteral || ssr.Source == ""
+}
+
+// SourcedBool holds a bool value along with its source type
+// This allows booleans to come from literals or environment variables
+type SourcedBool struct {
+	Value  bool
+	Source annotation.ValueSourceType
+}
+
+// IsFromEnv returns true if oauth2-proxy should read this from env vars
+func (sb SourcedBool) IsFromEnv() bool {
+	return sb.Source == annotation.ValueSourceEnv
+}
+
+// IsLiteral returns true if this is a literal value (or unset, defaulting to literal)
+func (sb SourcedBool) IsLiteral() bool {
+	return sb.Source == annotation.ValueSourceLiteral || sb.Source == ""
+}
+
+// SourcedStringSlice holds a string slice along with its source type
+// This allows slices to come from literals or environment variables
+type SourcedStringSlice struct {
+	Values []string
+	Source annotation.ValueSourceType
+	Set    bool // true if explicitly set via annotation (even if empty)
+}
+
+// IsFromEnv returns true if oauth2-proxy should read this from env vars
+func (ss SourcedStringSlice) IsFromEnv() bool {
+	return ss.Source == annotation.ValueSourceEnv
+}
+
+// IsLiteral returns true if this is a literal value (or unset, defaulting to literal)
+func (ss SourcedStringSlice) IsLiteral() bool {
+	return ss.Source == annotation.ValueSourceLiteral || ss.Source == ""
+}
+
 // ConfigMapKeys defines the expected keys in an oauth2-proxy ConfigMap
 // These constants help ensure consistency between config creation and loading
 //
@@ -283,75 +362,94 @@ func NewEmptyProxyConfig() *ProxyConfig {
 // EffectiveConfig represents the final, merged configuration after applying
 // pod annotation overrides to the base ConfigMap settings.
 // This is what actually gets passed to the sidecar builder.
+//
+// Fields that support dynamic value sources use Sourced* types.
+// The Source field indicates how the value should be resolved:
+//   - ValueSourceLiteral: use the value directly as a flag argument
+//   - ValueSourceFile: use --*-file flag pointing to CSI mount (secrets only)
+//   - ValueSourceEnv: skip the flag, oauth2-proxy reads from OAUTH2_PROXY_* env var
+//
+// Pod-specific fields (annotation-only) do NOT support fromEnv because they
+// are inherently per-pod settings that wouldn't make sense to read from env.
 type EffectiveConfig struct {
 	// Source tracking for debugging/logging
 	ConfigMapName      string
 	ConfigMapNamespace string
 
-	// ===== Provider Settings (merged) =====
-	Provider        string
-	OIDCIssuerURL   string
-	OIDCGroupsClaim string
-	Scope           string
-	ValidateURL     string
+	// ===== Provider Settings (merged, supports fromEnv) =====
 
-	// ===== Identity Settings (merged) =====
-	ClientID            string
-	ClientSecretRef     *SecretRef
-	PKCEEnabled         bool
-	CodeChallengeMethod string
+	Provider        SourcedValue
+	OIDCIssuerURL   SourcedValue
+	OIDCGroupsClaim SourcedValue
+	Scope           SourcedValue
+	ValidateURL     SourcedValue
 
-	// ===== Cookie Settings (merged) =====
-	CookieSecretRef *SecretRef
-	CookieDomains   []string
-	CookieSecure    bool
-	CookieName      string
+	// ===== Identity Settings (merged, supports fromEnv) =====
 
-	// ===== Authorization Settings (merged) =====
-	EmailDomains  []string
-	AllowedGroups []string
-	// AllowedEmails    []string
-	WhitelistDomains []string
+	ClientID            SourcedValue
+	ClientSecret        SourcedSecretRef
+	PKCEEnabled         SourcedBool
+	CodeChallengeMethod SourcedValue
 
-	// ===== Routing Settings (merged) =====
-	RedirectURL     string
-	ExtraJWTIssuers []string
+	// ===== Cookie Settings (merged, supports fromEnv) =====
 
-	// ===== Header Settings (merged) =====
-	PassAccessToken         bool
-	SetXAuthRequest         bool
-	PassAuthorizationHeader bool
+	CookieSecret  SourcedSecretRef
+	CookieDomains SourcedStringSlice
+	CookieSecure  SourcedBool
+	CookieName    SourcedValue
 
-	// ===== Behavior Settings (merged) =====
-	SkipProviderButton bool
+	// ===== Authorization Settings (merged, supports fromEnv) =====
 
-	// ===== Annotation-Only Settings =====
-	// These come only from annotations, not ConfigMap
+	EmailDomains     SourcedStringSlice
+	AllowedGroups    SourcedStringSlice
+	WhitelistDomains SourcedStringSlice
 
-	BlockDirectAccess   bool
-	ProtectedPort       string
-	IgnorePaths         []string
-	APIPaths            []string
-	SkipJWTBearerTokens bool
-	UpstreamTLS         annotation.UpstreamTLSMode // "http", "https", "https-insecure"
+	// ===== Routing Settings (merged, supports fromEnv) =====
 
-	// Upstream is an optional override for the auto-calculated upstream URL
-	// When empty, the sidecar builder calculates it from port mapping
-	// When set, it's used directly (e.g., "http://other-service:8080/api")
-	Upstream string
+	RedirectURL     SourcedValue
+	ExtraJWTIssuers SourcedStringSlice
 
-	// PingPath overrides oauth2-proxy's ping/healthz endpoint path
-	// Default: "/ping" (oauth2-proxy default)
-	PingPath string
+	// ===== Header Settings (merged, supports fromEnv) =====
 
-	// ReadyPath overrides oauth2-proxy's ready endpoint path
-	// Default: "/ready" (oauth2-proxy default)
-	ReadyPath string
+	PassAccessToken         SourcedBool
+	SetXAuthRequest         SourcedBool
+	PassAuthorizationHeader SourcedBool
 
-	// ===== Container Settings (from ConfigMap only) =====
-	ExtraArgs      []string
+	// ===== Behavior Settings (merged, supports fromEnv) =====
+
+	SkipProviderButton  SourcedBool
+	SkipJWTBearerTokens SourcedBool
+
+	// ===== Container Settings =====
+
+	// ProxyImage is the oauth2-proxy container image (plain string, no fromEnv)
+	// This is used by the webhook at pod creation time, not by oauth2-proxy at runtime
 	ProxyImage     string
-	ProxyResources *corev1.ResourceRequirements
+	ExtraArgs      []string                    // ConfigMap only, no fromEnv
+	ProxyResources *corev1.ResourceRequirements // ConfigMap only
+
+	// ===== Pod-Specific Settings (annotation-only, NO fromEnv support) =====
+	// These are inherently per-pod and wouldn't make sense from env vars
+
+	BlockDirectAccess bool
+	ProtectedPort     string
+	Upstream          SourcedValue               // supports fromEnv (not strictly pod-specific)
+	UpstreamTLS       annotation.UpstreamTLSMode // "http", "https", "https-insecure"
+	IgnorePaths       []string                   // pod-specific routing
+	APIPaths          []string                   // pod-specific routing
+	PingPath          string                     // pod-specific probe config
+	ReadyPath         string                     // pod-specific probe config
+
+	// ===== Secret Provider Class (CSI Driver) =====
+
+	// SecretProviderClass is the name of a SecretProviderClass for CSI secrets driver
+	// When set, a CSI volume is mounted at /etc/oauth2-proxy/conf.d/ and config values
+	// can be read from files. File names map to annotation keys (e.g., "client-secret").
+	//
+	// Special handling for sensitive values:
+	//   - client-secret -> uses --client-secret-file flag
+	//   - cookie-secret -> uses --cookie-secret-file flag
+	SecretProviderClass string
 }
 
 // Validation errors that can occur when loading config

@@ -36,6 +36,12 @@ func NewSidecarBuilder() *OAuth2ProxySidecarBuilder {
 }
 
 // Build creates an oauth2-proxy sidecar container and associated volumes
+//
+// When cfg.SecretProviderClass is set:
+//   - Adds CSI volume for the SecretProviderClass
+//   - Adds volume mount to the container
+//   - File-based secrets are handled by buildArgs via IsFromFile() checks
+//   - Env vars for secrets are skipped by buildEnvVars via IsFromFile() checks
 func (b *OAuth2ProxySidecarBuilder) Build(cfg *config.EffectiveConfig, portMapping PortMapping) (*corev1.Container, []corev1.Volume) {
 	portName := cfg.ProtectedPort
 	if !annotation.IsNamedPort(portName) {
@@ -73,6 +79,12 @@ func (b *OAuth2ProxySidecarBuilder) Build(cfg *config.EffectiveConfig, portMappi
 
 	volumes := []corev1.Volume{}
 
+	// Add CSI volume and mount when SecretProviderClass is configured
+	if cfg.SecretProviderClass != "" {
+		volumes = append(volumes, BuildCSIVolume(cfg.SecretProviderClass))
+		container.VolumeMounts = append(container.VolumeMounts, BuildCSIVolumeMount())
+	}
+
 	return container, volumes
 }
 
@@ -80,77 +92,124 @@ func (b *OAuth2ProxySidecarBuilder) Build(cfg *config.EffectiveConfig, portMappi
 //
 // Boolean flags use explicit --flag="true" or --flag="false" format for clarity
 // and predictability. This avoids ambiguity around default values.
+//
+// SourcedValue handling:
+//   - IsLiteral(): add --flag=<value> as normal
+//   - IsFromEnv(): skip the flag entirely (oauth2-proxy reads OAUTH2_PROXY_* env vars)
+//   - IsFromFile(): use --*-file flag pointing to CSI mount (only for secrets)
 func buildArgs(cfg *config.EffectiveConfig, portMapping PortMapping) []string {
 	var ret []string
 
-	ret = append(ret, "--provider="+cfg.Provider)
-	ret = append(ret, "--oidc-issuer-url="+cfg.OIDCIssuerURL)
-	ret = append(ret, "--client-id="+cfg.ClientID)
+	// Provider - skip if fromEnv
+	if !cfg.Provider.IsFromEnv() {
+		ret = append(ret, "--provider="+cfg.Provider.Value)
+	}
+
+	// OIDC Issuer URL - skip if fromEnv
+	if !cfg.OIDCIssuerURL.IsFromEnv() && cfg.OIDCIssuerURL.Value != "" {
+		ret = append(ret, "--oidc-issuer-url="+cfg.OIDCIssuerURL.Value)
+	}
+
+	// Client ID - skip if fromEnv
+	if !cfg.ClientID.IsFromEnv() {
+		ret = append(ret, "--client-id="+cfg.ClientID.Value)
+	}
+
 	ret = append(ret, "--http-address=0.0.0.0:4180")
 
-	if cfg.Upstream == "" {
-		switch cfg.UpstreamTLS {
-		case annotation.UpstreamNoTLS:
-			ret = append(ret, fmt.Sprintf("--upstream=http://127.0.0.1:%d", portMapping.ProxyPort))
-		case annotation.UpstreamTLSSecure:
-			ret = append(ret, fmt.Sprintf("--upstream=https://127.0.0.1:%d", portMapping.ProxyPort))
-		case annotation.UpstreamTLSInsecure:
-			ret = append(ret, fmt.Sprintf("--upstream=https://127.0.0.1:%d", portMapping.ProxyPort))
-			ret = append(ret, "--ssl-upstream-insecure-skip-verify=true")
-		}
-	} else {
-		ret = append(ret, fmt.Sprintf("--upstream=%s", cfg.Upstream))
-		if cfg.UpstreamTLS == annotation.UpstreamTLSInsecure {
-			ret = append(ret, "--ssl-upstream-insecure-skip-verify=true")
+	// Upstream - skip entirely if fromEnv (oauth2-proxy reads OAUTH2_PROXY_UPSTREAM)
+	if !cfg.Upstream.IsFromEnv() {
+		if cfg.Upstream.Value == "" {
+			switch cfg.UpstreamTLS {
+			case annotation.UpstreamNoTLS:
+				ret = append(ret, fmt.Sprintf("--upstream=http://127.0.0.1:%d", portMapping.ProxyPort))
+			case annotation.UpstreamTLSSecure:
+				ret = append(ret, fmt.Sprintf("--upstream=https://127.0.0.1:%d", portMapping.ProxyPort))
+			case annotation.UpstreamTLSInsecure:
+				ret = append(ret, fmt.Sprintf("--upstream=https://127.0.0.1:%d", portMapping.ProxyPort))
+				ret = append(ret, "--ssl-upstream-insecure-skip-verify=true")
+			}
+		} else {
+			ret = append(ret, fmt.Sprintf("--upstream=%s", cfg.Upstream.Value))
+			if cfg.UpstreamTLS == annotation.UpstreamTLSInsecure {
+				ret = append(ret, "--ssl-upstream-insecure-skip-verify=true")
+			}
 		}
 	}
 
-	if !cfg.CookieSecure {
-		ret = append(ret, "--cookie-secure=false") // default is true
+	// Cookie secure - skip if fromEnv, otherwise only add if false (default is true)
+	if !cfg.CookieSecure.IsFromEnv() && !cfg.CookieSecure.Value {
+		ret = append(ret, "--cookie-secure=false")
 	}
-	if cfg.SkipProviderButton {
-		ret = append(ret, "--skip-provider-button=true") // default is false
+	// Skip provider button - skip if fromEnv, otherwise only add if true (default is false)
+	if !cfg.SkipProviderButton.IsFromEnv() && cfg.SkipProviderButton.Value {
+		ret = append(ret, "--skip-provider-button=true")
 	}
-	if cfg.SkipJWTBearerTokens {
-		ret = append(ret, "--skip-jwt-bearer-tokens=true") // default is false
+	// Skip JWT bearer tokens - skip if fromEnv, otherwise only add if true (default is false)
+	if !cfg.SkipJWTBearerTokens.IsFromEnv() && cfg.SkipJWTBearerTokens.Value {
+		ret = append(ret, "--skip-jwt-bearer-tokens=true")
 	}
-	if cfg.PassAccessToken {
-		ret = append(ret, "--pass-access-token=true") // default is false
+	// Pass access token - skip if fromEnv, otherwise only add if true (default is false)
+	if !cfg.PassAccessToken.IsFromEnv() && cfg.PassAccessToken.Value {
+		ret = append(ret, "--pass-access-token=true")
 	}
-	if cfg.SetXAuthRequest {
-		ret = append(ret, "--set-xauthrequest=true") // default is false
+	// Set X-Auth-Request headers - skip if fromEnv, otherwise only add if true (default is false)
+	if !cfg.SetXAuthRequest.IsFromEnv() && cfg.SetXAuthRequest.Value {
+		ret = append(ret, "--set-xauthrequest=true")
 	}
-	if cfg.PassAuthorizationHeader {
-		ret = append(ret, "--pass-authorization-header=true") // default is false
+	// Pass authorization header - skip if fromEnv, otherwise only add if true (default is false)
+	if !cfg.PassAuthorizationHeader.IsFromEnv() && cfg.PassAuthorizationHeader.Value {
+		ret = append(ret, "--pass-authorization-header=true")
 	}
 
 	// Handle PKCE / code-challenge-method
 	// If CodeChallengeMethod is explicitly set, use it (regardless of PKCEEnabled)
 	// If PKCEEnabled is true and CodeChallengeMethod is empty, default to S256
-	if cfg.CodeChallengeMethod != "" {
-		ret = append(ret, "--code-challenge-method="+cfg.CodeChallengeMethod)
-		if cfg.ClientSecretRef == nil {
+	// Skip if either is fromEnv (oauth2-proxy reads from env vars)
+	if !cfg.CodeChallengeMethod.IsFromEnv() && cfg.CodeChallengeMethod.Value != "" {
+		ret = append(ret, "--code-challenge-method="+cfg.CodeChallengeMethod.Value)
+		// Only need /dev/null if no client secret is being provided by any source
+		needsNullSecret := cfg.ClientSecret.Ref == nil && cfg.ClientSecret.IsLiteral()
+		if needsNullSecret {
 			ret = append(ret, "--client-secret-file=/dev/null")
 		}
-	} else if cfg.PKCEEnabled {
+	} else if !cfg.PKCEEnabled.IsFromEnv() && cfg.PKCEEnabled.Value {
 		ret = append(ret, "--code-challenge-method=S256")
-		ret = append(ret, "--client-secret-file=/dev/null")
+		// Only need /dev/null if no client secret is being provided by any source
+		needsNullSecret := cfg.ClientSecret.Ref == nil && cfg.ClientSecret.IsLiteral()
+		if needsNullSecret {
+			ret = append(ret, "--client-secret-file=/dev/null")
+		}
 	}
 
-	if cfg.Scope != "" {
-		ret = append(ret, "--scope="+cfg.Scope)
+	// Handle file-based secrets (from CSI SecretProviderClass)
+	// When source is file, add --*-secret-file flags pointing to CSI mount
+	if cfg.ClientSecret.IsFromFile() {
+		ret = append(ret, "--client-secret-file="+GetFileOverridePath("client-secret"))
 	}
-	if cfg.ValidateURL != "" {
-		ret = append(ret, "--validate-url="+cfg.ValidateURL)
+	if cfg.CookieSecret.IsFromFile() {
+		ret = append(ret, "--cookie-secret-file="+GetFileOverridePath("cookie-secret"))
 	}
-	if cfg.OIDCGroupsClaim != "" {
-		ret = append(ret, "--oidc-groups-claim="+cfg.OIDCGroupsClaim)
+
+	// Scope - skip if fromEnv
+	if !cfg.Scope.IsFromEnv() && cfg.Scope.Value != "" {
+		ret = append(ret, "--scope="+cfg.Scope.Value)
 	}
-	if cfg.RedirectURL != "" {
-		ret = append(ret, "--redirect-url="+cfg.RedirectURL)
+	// Validate URL - skip if fromEnv
+	if !cfg.ValidateURL.IsFromEnv() && cfg.ValidateURL.Value != "" {
+		ret = append(ret, "--validate-url="+cfg.ValidateURL.Value)
 	}
-	if cfg.CookieName != "" {
-		ret = append(ret, "--cookie-name="+cfg.CookieName)
+	// OIDC groups claim - skip if fromEnv
+	if !cfg.OIDCGroupsClaim.IsFromEnv() && cfg.OIDCGroupsClaim.Value != "" {
+		ret = append(ret, "--oidc-groups-claim="+cfg.OIDCGroupsClaim.Value)
+	}
+	// Redirect URL - skip if fromEnv
+	if !cfg.RedirectURL.IsFromEnv() && cfg.RedirectURL.Value != "" {
+		ret = append(ret, "--redirect-url="+cfg.RedirectURL.Value)
+	}
+	// Cookie name - skip if fromEnv
+	if !cfg.CookieName.IsFromEnv() && cfg.CookieName.Value != "" {
+		ret = append(ret, "--cookie-name="+cfg.CookieName.Value)
 	}
 	if cfg.PingPath != "" {
 		ret = append(ret, "--ping-path="+cfg.PingPath)
@@ -159,30 +218,41 @@ func buildArgs(cfg *config.EffectiveConfig, portMapping PortMapping) []string {
 		ret = append(ret, "--ready-path="+cfg.ReadyPath)
 	}
 
-	if len(cfg.ExtraJWTIssuers) > 0 {
-		ret = append(ret, "--extra-jwt-issuers="+strings.Join(cfg.ExtraJWTIssuers, ","))
+	// Extra JWT issuers - skip if fromEnv
+	if !cfg.ExtraJWTIssuers.IsFromEnv() && len(cfg.ExtraJWTIssuers.Values) > 0 {
+		ret = append(ret, "--extra-jwt-issuers="+strings.Join(cfg.ExtraJWTIssuers.Values, ","))
 	}
 
-	for _, d := range cfg.EmailDomains {
-		ret = append(ret, "--email-domain="+d)
+	// Email domains - skip if fromEnv
+	if !cfg.EmailDomains.IsFromEnv() {
+		for _, d := range cfg.EmailDomains.Values {
+			ret = append(ret, "--email-domain="+d)
+		}
 	}
-	for _, g := range cfg.AllowedGroups {
-		ret = append(ret, "--allowed-group="+g)
+	// Allowed groups - skip if fromEnv
+	if !cfg.AllowedGroups.IsFromEnv() {
+		for _, g := range cfg.AllowedGroups.Values {
+			ret = append(ret, "--allowed-group="+g)
+		}
 	}
+	// Ignore paths and API paths are annotation-only (no fromEnv support)
 	for _, p := range cfg.IgnorePaths {
 		ret = append(ret, "--skip-auth-route="+p)
 	}
 	for _, p := range cfg.APIPaths {
 		ret = append(ret, "--api-route="+p)
 	}
-	// for _, d := range cfg.AllowedEmails {
-	// 	ret = append(ret, "--email-domain=" + d)
-	// }
-	for _, p := range cfg.CookieDomains {
-		ret = append(ret, "--cookie-domain="+p)
+	// Cookie domains - skip if fromEnv
+	if !cfg.CookieDomains.IsFromEnv() {
+		for _, p := range cfg.CookieDomains.Values {
+			ret = append(ret, "--cookie-domain="+p)
+		}
 	}
-	for _, p := range cfg.WhitelistDomains {
-		ret = append(ret, "--whitelist-domain="+p)
+	// Whitelist domains - skip if fromEnv
+	if !cfg.WhitelistDomains.IsFromEnv() {
+		for _, p := range cfg.WhitelistDomains.Values {
+			ret = append(ret, "--whitelist-domain="+p)
+		}
 	}
 	for _, arg := range cfg.ExtraArgs {
 		ret = append(ret, arg)
@@ -192,29 +262,39 @@ func buildArgs(cfg *config.EffectiveConfig, portMapping PortMapping) []string {
 }
 
 // buildEnvVars creates environment variable definitions for secrets
+//
+// SourcedSecretRef handling:
+//   - IsLiteral(): create env var from Ref (current behavior)
+//   - IsFromFile(): skip env var (secret read from file via --*-secret-file)
+//   - IsFromEnv(): skip env var (oauth2-proxy reads from pre-existing env var)
 func buildEnvVars(cfg *config.EffectiveConfig) []corev1.EnvVar {
-	ret := []corev1.EnvVar{
-		corev1.EnvVar{
+	ret := []corev1.EnvVar{}
+
+	// Cookie secret - only add env var if source is literal and ref is set
+	if cfg.CookieSecret.IsLiteral() && cfg.CookieSecret.Ref != nil {
+		ret = append(ret, corev1.EnvVar{
 			Name: "OAUTH2_PROXY_COOKIE_SECRET",
 			ValueFrom: &corev1.EnvVarSource{
 				SecretKeyRef: &corev1.SecretKeySelector{
 					LocalObjectReference: corev1.LocalObjectReference{
-						Name: cfg.CookieSecretRef.Name,
+						Name: cfg.CookieSecret.Ref.Name,
 					},
-					Key: cfg.CookieSecretRef.Key,
+					Key: cfg.CookieSecret.Ref.Key,
 				},
 			},
-		},
+		})
 	}
-	if cfg.ClientSecretRef != nil {
+
+	// Client secret - only add env var if source is literal and ref is set
+	if cfg.ClientSecret.IsLiteral() && cfg.ClientSecret.Ref != nil {
 		ret = append(ret, corev1.EnvVar{
 			Name: "OAUTH2_PROXY_CLIENT_SECRET",
 			ValueFrom: &corev1.EnvVarSource{
 				SecretKeyRef: &corev1.SecretKeySelector{
 					LocalObjectReference: corev1.LocalObjectReference{
-						Name: cfg.ClientSecretRef.Name,
+						Name: cfg.ClientSecret.Ref.Name,
 					},
-					Key: cfg.ClientSecretRef.Key,
+					Key: cfg.ClientSecret.Ref.Key,
 				},
 			},
 		})
