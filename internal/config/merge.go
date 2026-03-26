@@ -50,7 +50,12 @@ func (m *ConfigMerger) Merge(base *ProxyConfig, overrides *annotation.Config) (*
 
 	// Identity settings
 	cfg.ClientID = mergeSourcedValue(base.ClientID, overrides.Overrides.ClientID)
-	cfg.PKCEEnabled = mergeSourcedBool(base.PKCEEnabled, overrides.Overrides.PKCEEnabled)
+	// PKCEEnabled is a simple bool (doesn't support fromEnv)
+	if overrides.Overrides.PKCEEnabled != nil {
+		cfg.PKCEEnabled = *overrides.Overrides.PKCEEnabled
+	} else {
+		cfg.PKCEEnabled = base.PKCEEnabled
+	}
 	cfg.CodeChallengeMethod = mergeSourcedValue(base.CodeChallengeMethod, overrides.Overrides.CodeChallengeMethod)
 
 	// Client secret with SourcedSecretRef
@@ -99,6 +104,7 @@ func (m *ConfigMerger) Merge(base *ProxyConfig, overrides *annotation.Config) (*
 	cfg.PingPath = overrides.PingPath
 	cfg.ReadyPath = overrides.ReadyPath
 	cfg.SecretProviderClass = overrides.SecretProviderClass
+	cfg.EnvSecret = overrides.EnvSecret
 
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -243,7 +249,7 @@ func (cfg *EffectiveConfig) Validate() error {
 	// Secret validations - skip when using SecretProviderClass or non-literal sources
 	if cfg.SecretProviderClass == "" {
 		// Client secret: required unless PKCE enabled OR source is file/env
-		if !cfg.PKCEEnabled.Value && cfg.ClientSecret.Ref == nil && cfg.ClientSecret.IsLiteral() {
+		if !cfg.PKCEEnabled && cfg.ClientSecret.Ref == nil && cfg.ClientSecret.IsLiteral() {
 			return fmt.Errorf("\npkce must be enabled or client-secret-ref provided")
 		}
 

@@ -165,7 +165,8 @@ func buildArgs(cfg *config.EffectiveConfig, portMapping PortMapping) []string {
 	// Handle PKCE / code-challenge-method
 	// If CodeChallengeMethod is explicitly set, use it (regardless of PKCEEnabled)
 	// If PKCEEnabled is true and CodeChallengeMethod is empty, default to S256
-	// Skip if either is fromEnv (oauth2-proxy reads from env vars)
+	// Skip CodeChallengeMethod if fromEnv (oauth2-proxy reads from env vars)
+	// Note: PKCEEnabled is a bool abstraction that doesn't support fromEnv
 	if !cfg.CodeChallengeMethod.IsFromEnv() && cfg.CodeChallengeMethod.Value != "" {
 		ret = append(ret, "--code-challenge-method="+cfg.CodeChallengeMethod.Value)
 		// Only need /dev/null if no client secret is being provided by any source
@@ -173,7 +174,7 @@ func buildArgs(cfg *config.EffectiveConfig, portMapping PortMapping) []string {
 		if needsNullSecret {
 			ret = append(ret, "--client-secret-file=/dev/null")
 		}
-	} else if !cfg.PKCEEnabled.IsFromEnv() && cfg.PKCEEnabled.Value {
+	} else if cfg.PKCEEnabled {
 		ret = append(ret, "--code-challenge-method=S256")
 		// Only need /dev/null if no client secret is being provided by any source
 		needsNullSecret := cfg.ClientSecret.Ref == nil && cfg.ClientSecret.IsLiteral()
@@ -261,12 +262,21 @@ func buildArgs(cfg *config.EffectiveConfig, portMapping PortMapping) []string {
 	return ret
 }
 
-// buildEnvVars creates environment variable definitions for secrets
+// buildEnvVars creates environment variable definitions for secrets and fromEnv fields
 //
 // SourcedSecretRef handling:
 //   - IsLiteral(): create env var from Ref (current behavior)
 //   - IsFromFile(): skip env var (secret read from file via --*-secret-file)
-//   - IsFromEnv(): skip env var (oauth2-proxy reads from pre-existing env var)
+//   - IsFromEnv(): create env var from EnvSecret if set
+//
+// When EnvSecret is set and a field has IsFromEnv(), we generate:
+//
+//	env:
+//	- name: OAUTH2_PROXY_CLIENT_ID
+//	  valueFrom:
+//	    secretKeyRef:
+//	      name: <EnvSecret>
+//	      key: client-id
 func buildEnvVars(cfg *config.EffectiveConfig) []corev1.EnvVar {
 	ret := []corev1.EnvVar{}
 
@@ -298,6 +308,121 @@ func buildEnvVars(cfg *config.EffectiveConfig) []corev1.EnvVar {
 				},
 			},
 		})
+	}
+
+	// If EnvSecret is set, generate env vars for all fromEnv fields
+	if cfg.EnvSecret != "" {
+		ret = append(ret, buildEnvVarsFromSecret(cfg)...)
+	}
+
+	return ret
+}
+
+// buildEnvVarsFromSecret generates env var entries for fields with fromEnv source
+// Each entry maps the oauth2-proxy env var name to a key in the EnvSecret
+func buildEnvVarsFromSecret(cfg *config.EffectiveConfig) []corev1.EnvVar {
+	var ret []corev1.EnvVar
+
+	secretName := cfg.EnvSecret
+
+	// Helper to add an env var from the secret
+	addEnvVar := func(envName, secretKey string) {
+		ret = append(ret, corev1.EnvVar{
+			Name: envName,
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: secretName,
+					},
+					Key: secretKey,
+				},
+			},
+		})
+	}
+
+	// Provider settings
+	if cfg.Provider.IsFromEnv() {
+		addEnvVar("OAUTH2_PROXY_PROVIDER", "provider")
+	}
+	if cfg.OIDCIssuerURL.IsFromEnv() {
+		addEnvVar("OAUTH2_PROXY_OIDC_ISSUER_URL", "oidc-issuer-url")
+	}
+	if cfg.OIDCGroupsClaim.IsFromEnv() {
+		addEnvVar("OAUTH2_PROXY_OIDC_GROUPS_CLAIM", "oidc-groups-claim")
+	}
+	if cfg.Scope.IsFromEnv() {
+		addEnvVar("OAUTH2_PROXY_SCOPE", "scope")
+	}
+	if cfg.ValidateURL.IsFromEnv() {
+		addEnvVar("OAUTH2_PROXY_VALIDATE_URL", "validate-url")
+	}
+
+	// Identity settings
+	if cfg.ClientID.IsFromEnv() {
+		addEnvVar("OAUTH2_PROXY_CLIENT_ID", "client-id")
+	}
+	if cfg.ClientSecret.IsFromEnv() {
+		addEnvVar("OAUTH2_PROXY_CLIENT_SECRET", "client-secret")
+	}
+	// code-challenge-method maps to OAUTH2_PROXY_CODE_CHALLENGE_METHOD
+	// Note: pkce-enabled is a boolean abstraction (true → S256) and doesn't support fromEnv
+	if cfg.CodeChallengeMethod.IsFromEnv() {
+		addEnvVar("OAUTH2_PROXY_CODE_CHALLENGE_METHOD", "code-challenge-method")
+	}
+
+	// Cookie settings
+	if cfg.CookieSecret.IsFromEnv() {
+		addEnvVar("OAUTH2_PROXY_COOKIE_SECRET", "cookie-secret")
+	}
+	if cfg.CookieName.IsFromEnv() {
+		addEnvVar("OAUTH2_PROXY_COOKIE_NAME", "cookie-name")
+	}
+	if cfg.CookieSecure.IsFromEnv() {
+		addEnvVar("OAUTH2_PROXY_COOKIE_SECURE", "cookie-secure")
+	}
+	if cfg.CookieDomains.IsFromEnv() {
+		addEnvVar("OAUTH2_PROXY_COOKIE_DOMAINS", "cookie-domains")
+	}
+
+	// Authorization settings
+	if cfg.EmailDomains.IsFromEnv() {
+		addEnvVar("OAUTH2_PROXY_EMAIL_DOMAINS", "email-domains")
+	}
+	if cfg.AllowedGroups.IsFromEnv() {
+		addEnvVar("OAUTH2_PROXY_ALLOWED_GROUPS", "allowed-groups")
+	}
+	if cfg.WhitelistDomains.IsFromEnv() {
+		addEnvVar("OAUTH2_PROXY_WHITELIST_DOMAINS", "whitelist-domains")
+	}
+
+	// Routing settings
+	if cfg.RedirectURL.IsFromEnv() {
+		addEnvVar("OAUTH2_PROXY_REDIRECT_URL", "redirect-url")
+	}
+	if cfg.ExtraJWTIssuers.IsFromEnv() {
+		addEnvVar("OAUTH2_PROXY_EXTRA_JWT_ISSUERS", "extra-jwt-issuers")
+	}
+	if cfg.Upstream.IsFromEnv() {
+		addEnvVar("OAUTH2_PROXY_UPSTREAMS", "upstream")
+	}
+
+	// Header settings
+	if cfg.PassAccessToken.IsFromEnv() {
+		addEnvVar("OAUTH2_PROXY_PASS_ACCESS_TOKEN", "pass-access-token")
+	}
+	if cfg.SetXAuthRequest.IsFromEnv() {
+		addEnvVar("OAUTH2_PROXY_SET_XAUTHREQUEST", "set-xauthrequest")
+	}
+	if cfg.PassAuthorizationHeader.IsFromEnv() {
+		addEnvVar("OAUTH2_PROXY_PASS_AUTHORIZATION_HEADER", "pass-authorization-header")
+	}
+
+	// Behavior settings
+	if cfg.SkipProviderButton.IsFromEnv() {
+		addEnvVar("OAUTH2_PROXY_SKIP_PROVIDER_BUTTON", "skip-provider-button")
+	}
+	if cfg.SkipJWTBearerTokens.IsFromEnv() {
+		addEnvVar("OAUTH2_PROXY_SKIP_JWT_BEARER_TOKENS", "skip-jwt-bearer-tokens")
 	}
 
 	return ret

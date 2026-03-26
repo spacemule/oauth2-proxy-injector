@@ -388,7 +388,7 @@ type EffectiveConfig struct {
 
 	ClientID            SourcedValue
 	ClientSecret        SourcedSecretRef
-	PKCEEnabled         SourcedBool
+	PKCEEnabled         bool // boolean abstraction, doesn't support fromEnv
 	CodeChallengeMethod SourcedValue
 
 	// ===== Cookie Settings (merged, supports fromEnv) =====
@@ -450,6 +450,11 @@ type EffectiveConfig struct {
 	//   - client-secret -> uses --client-secret-file flag
 	//   - cookie-secret -> uses --cookie-secret-file flag
 	SecretProviderClass string
+
+	// EnvSecret is the name of a Secret to use for env var injection
+	// When set, fields with "fromEnv" source will generate env var entries
+	// that read from this Secret using the annotation name as the key
+	EnvSecret string
 }
 
 // Validation errors that can occur when loading config

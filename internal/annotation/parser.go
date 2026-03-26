@@ -228,6 +228,25 @@ const (
 	//   2. Pod annotations
 	//   3. ConfigMap
 	KeySecretProviderClass = AnnotationPrefix + "secret-provider-class"
+
+	// KeyEnvSecret specifies a Secret to use for env var injection
+	// Value: name of a Secret resource (e.g., "oauth2-proxy-env")
+	// When set, fields with "fromEnv" source will generate env var entries
+	// that read from this Secret. The Secret keys should match annotation names
+	// (e.g., "client-id", "provider", "oidc-issuer-url").
+	//
+	// Example Secret:
+	//   data:
+	//     client-id: bXktY2xpZW50  # base64 of "my-client"
+	//     provider: b2lkYw==       # base64 of "oidc"
+	//
+	// This generates env vars like:
+	//   - name: OAUTH2_PROXY_CLIENT_ID
+	//     valueFrom:
+	//       secretKeyRef:
+	//         name: oauth2-proxy-env
+	//         key: client-id
+	KeyEnvSecret = AnnotationPrefix + "env-secret"
 )
 
 // UpstreamTLSMode represents the TLS verification mode for upstream connections
@@ -404,6 +423,11 @@ type Config struct {
 	// When set, a CSI volume is mounted and config values are read from files
 	SecretProviderClass string
 
+	// EnvSecret is the name of a Secret to use for env var injection
+	// When set, fields with "fromEnv" source will generate env var entries
+	// that read from this Secret using the annotation name as the key
+	EnvSecret string
+
 	// ===== Pod-Specific Settings (annotation-only, no fromEnv support) =====
 	// These are inherently per-pod and wouldn't make sense to read from env vars
 
@@ -472,7 +496,9 @@ type ConfigOverrides struct {
 	ClientSecretRef ValueSource
 
 	// PKCEEnabled overrides the PKCE setting
-	PKCEEnabled BoolValueSource
+	// This is a boolean abstraction (true → code-challenge-method=S256)
+	// Does not support fromEnv - use code-challenge-method annotation instead
+	PKCEEnabled *bool
 
 	// CodeChallengeMethod overrides the PKCE code challenge method
 	CodeChallengeMethod ValueSource
@@ -643,6 +669,10 @@ func (p *AnnotationParser) Parse(annotations map[string]string) (*Config, error)
 		cfg.SecretProviderClass = strings.TrimSpace(v)
 	}
 
+	if v, ok := annotations[KeyEnvSecret]; ok {
+		cfg.EnvSecret = strings.TrimSpace(v)
+	}
+
 	if v, ok := annotations[KeyUpstreamTLS]; ok {
 		if v != string(UpstreamNoTLS) && v != string(UpstreamTLSInsecure) && v != string(UpstreamTLSSecure) {
 			return nil, fmt.Errorf("invalid upstream-tls value: %q (must be %s, %s, or %s)", v, UpstreamNoTLS, UpstreamTLSInsecure, UpstreamTLSSecure)
@@ -671,11 +701,11 @@ func (p *AnnotationParser) Parse(annotations map[string]string) (*Config, error)
 	}
 
 	if v, ok := annotations[KeyPKCEEnabled]; ok {
-		b, err := ParseBoolValueSource(v)
+		b, err := strconv.ParseBool(strings.TrimSpace(v))
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("invalid %s value: %q (must be true or false)", KeyPKCEEnabled, v)
 		}
-		cfg.Overrides.PKCEEnabled = b
+		cfg.Overrides.PKCEEnabled = &b
 	}
 
 	if v, ok := annotations[KeyCodeChallengeMethod]; ok {
