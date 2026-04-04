@@ -187,6 +187,9 @@ func (sv SourcedValue) IsLiteral() bool {
 type SourcedSecretRef struct {
 	Ref    *SecretRef
 	Source annotation.ValueSourceType
+	// FilePath is the explicit file path when Source is ValueSourceFile
+	// If empty and Source is ValueSourceFile, uses the default CSI mount path
+	FilePath string
 }
 
 // IsFromEnv returns true if oauth2-proxy should read this from env vars
@@ -460,6 +463,12 @@ type EffectiveConfig struct {
 	// Used for injecting custom env vars that can be referenced in extra-args
 	// Requires EnvSecret to be set
 	ExtraEnv map[string]string
+
+	// EnvFile is the path to a file to source before starting oauth2-proxy
+	// When set, the container command becomes:
+	//   /bin/sh -c "source <path> && exec /bin/oauth2-proxy ..."
+	// Useful for Vault Agent Injector which writes files containing export statements
+	EnvFile string
 }
 
 // Validation errors that can occur when loading config

@@ -57,10 +57,11 @@ func (b *OAuth2ProxySidecarBuilder) Build(cfg *config.EffectiveConfig, portMappi
 		ready = cfg.ReadyPath
 	}
 
+	args := buildArgs(cfg, portMapping)
+
 	container := &corev1.Container{
 		Name:  "oauth2-proxy",
 		Image: cfg.ProxyImage,
-		Args:  buildArgs(cfg, portMapping),
 		Env:   buildEnvVars(cfg),
 		Ports: []corev1.ContainerPort{
 			{
@@ -71,6 +72,23 @@ func (b *OAuth2ProxySidecarBuilder) Build(cfg *config.EffectiveConfig, portMappi
 		},
 		LivenessProbe:  buildProbe(4180, ping),
 		ReadinessProbe: buildProbe(4180, ready),
+	}
+
+	// When EnvFile is set, use shell wrapper to source env vars before starting
+	// This is useful for Vault Agent Injector which writes files, not env vars
+	if cfg.EnvFile != "" {
+		// Quote args that might contain special characters for shell safety
+		quotedArgs := make([]string, len(args))
+		for i, arg := range args {
+			quotedArgs[i] = shellQuoteArg(arg)
+		}
+		argsStr := strings.Join(quotedArgs, " ")
+		container.Command = []string{"/bin/sh", "-c"}
+		container.Args = []string{
+			fmt.Sprintf("source %s && exec /bin/oauth2-proxy %s", cfg.EnvFile, argsStr),
+		}
+	} else {
+		container.Args = args
 	}
 
 	if cfg.ProxyResources != nil {
@@ -183,13 +201,22 @@ func buildArgs(cfg *config.EffectiveConfig, portMapping PortMapping) []string {
 		}
 	}
 
-	// Handle file-based secrets (from CSI SecretProviderClass)
-	// When source is file, add --*-secret-file flags pointing to CSI mount
+	// Handle file-based secrets (from CSI SecretProviderClass or Vault Agent Injector)
+	// When source is file, add --*-secret-file flags
+	// If FilePath is set (from "file:/path" syntax), use that; otherwise use default CSI path
 	if cfg.ClientSecret.IsFromFile() {
-		ret = append(ret, "--client-secret-file="+GetFileOverridePath("client-secret"))
+		path := cfg.ClientSecret.FilePath
+		if path == "" {
+			path = GetFileOverridePath("client-secret")
+		}
+		ret = append(ret, "--client-secret-file="+path)
 	}
 	if cfg.CookieSecret.IsFromFile() {
-		ret = append(ret, "--cookie-secret-file="+GetFileOverridePath("cookie-secret"))
+		path := cfg.CookieSecret.FilePath
+		if path == "" {
+			path = GetFileOverridePath("cookie-secret")
+		}
+		ret = append(ret, "--cookie-secret-file="+path)
 	}
 
 	// Scope - skip if fromEnv
@@ -431,6 +458,19 @@ func buildEnvVarsFromSecret(cfg *config.EffectiveConfig) []corev1.EnvVar {
 	}
 
 	return ret
+}
+
+// shellQuoteArg quotes an argument for safe use in a shell command
+// Uses single quotes and escapes embedded single quotes
+func shellQuoteArg(arg string) string {
+	// If the arg contains no special characters, return as-is
+	if !strings.ContainsAny(arg, " \t'\"\\$`!") {
+		return arg
+	}
+	// Escape single quotes by ending the quote, adding escaped quote, resuming quote
+	// e.g., "it's" becomes 'it'\''s'
+	escaped := strings.ReplaceAll(arg, "'", "'\\''")
+	return "'" + escaped + "'"
 }
 
 // buildProbe creates a liveness/readiness probe for oauth2-proxy

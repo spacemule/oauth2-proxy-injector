@@ -106,6 +106,7 @@ func (m *ConfigMerger) Merge(base *ProxyConfig, overrides *annotation.Config) (*
 	cfg.SecretProviderClass = overrides.SecretProviderClass
 	cfg.EnvSecret = overrides.EnvSecret
 	cfg.ExtraEnv = overrides.ExtraEnv
+	cfg.EnvFile = overrides.EnvFile
 
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -170,7 +171,10 @@ func mergeSourcedSecretRef(base *SecretRef, override annotation.ValueSource, def
 			Source: annotation.ValueSourceLiteral,
 		}, err
 	case annotation.ValueSourceFile:
-		return SourcedSecretRef{Source: annotation.ValueSourceFile}, nil
+		return SourcedSecretRef{
+			Source:   annotation.ValueSourceFile,
+			FilePath: override.Value, // preserve explicit path from "file:/path" syntax
+		}, nil
 	case annotation.ValueSourceEnv:
 		return SourcedSecretRef{Source: annotation.ValueSourceEnv}, nil
 	default:

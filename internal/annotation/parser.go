@@ -263,6 +263,23 @@ const (
 	//     spacemule.net/oauth2-proxy.extra-env: "project-id:PROJECT_ID"
 	//     spacemule.net/oauth2-proxy.allowed-groups: "${PROJECT_ID}:admin,${PROJECT_ID}:family"
 	KeyExtraEnv = AnnotationPrefix + "extra-env"
+
+	// KeyEnvFile specifies a file path to source before starting oauth2-proxy
+	// Value: absolute file path (e.g., "/vault/secrets/env")
+	//
+	// When set, the container command becomes:
+	//   /bin/sh -c "source /vault/secrets/env && exec /bin/oauth2-proxy ..."
+	//
+	// This is useful for Vault Agent Injector which writes files, not env vars.
+	// The file should contain shell export statements:
+	//   export OAUTH2_PROXY_CLIENT_ID="my-client"
+	//   export OAUTH2_PROXY_OIDC_ISSUER_URL="https://auth.example.com"
+	//
+	// Use with "fromEnv" annotation values to skip flag generation:
+	//   annotations:
+	//     spacemule.net/oauth2-proxy.env-file: "/vault/secrets/env"
+	//     spacemule.net/oauth2-proxy.client-id: "fromEnv"
+	KeyEnvFile = AnnotationPrefix + "env-file"
 )
 
 // UpstreamTLSMode represents the TLS verification mode for upstream connections
@@ -312,14 +329,18 @@ type ValueSource struct {
 // ParseValueSource parses an annotation value into a ValueSource
 //
 // Supported formats:
-//   - "file"    -> ValueSource{Type: ValueSourceFile}
-//   - "fromEnv" -> ValueSource{Type: ValueSourceEnv}
-//   - anything else -> ValueSource{Type: ValueSourceLiteral, Value: <the value>}
+//   - "file"         -> ValueSource{Type: ValueSourceFile} (uses default CSI path)
+//   - "file:/path"   -> ValueSource{Type: ValueSourceFile, Value: "/path"} (explicit path)
+//   - "fromEnv"      -> ValueSource{Type: ValueSourceEnv}
+//   - anything else  -> ValueSource{Type: ValueSourceLiteral, Value: <the value>}
 func ParseValueSource(value string) ValueSource {
-	switch value {
-	case "file":
+	switch {
+	case value == "file":
 		return ValueSource{Type: ValueSourceFile}
-	case "fromEnv":
+	case strings.HasPrefix(value, "file:"):
+		// Explicit file path: "file:/vault/secrets/client-secret"
+		return ValueSource{Type: ValueSourceFile, Value: strings.TrimPrefix(value, "file:")}
+	case value == "fromEnv":
 		return ValueSource{Type: ValueSourceEnv}
 	default:
 		return ValueSource{Type: ValueSourceLiteral, Value: value}
@@ -483,6 +504,11 @@ type Config struct {
 	// Parsed from "secretKey:ENV_VAR_NAME,secretKey2:ENV_VAR_NAME2" format
 	// Requires EnvSecret to be set
 	ExtraEnv map[string]string
+
+	// EnvFile is the path to a file to source before starting oauth2-proxy
+	// When set, the container uses: /bin/sh -c "source <path> && exec /bin/oauth2-proxy ..."
+	// Useful for Vault Agent Injector which writes files containing export statements
+	EnvFile string
 
 	// ===== Pod-Specific Settings (annotation-only, no fromEnv support) =====
 	// These are inherently per-pod and wouldn't make sense to read from env vars
@@ -735,6 +761,10 @@ func (p *AnnotationParser) Parse(annotations map[string]string) (*Config, error)
 			return nil, err
 		}
 		cfg.ExtraEnv = extraEnv
+	}
+
+	if v, ok := annotations[KeyEnvFile]; ok {
+		cfg.EnvFile = strings.TrimSpace(v)
 	}
 
 	if v, ok := annotations[KeyUpstreamTLS]; ok {
