@@ -23,6 +23,7 @@ Most configuration values support three source types:
 | **Literal** | `"my-value"` | Value passed directly as `--flag=my-value` |
 | **Environment** | `"fromEnv"` | Flag skipped; oauth2-proxy reads `OAUTH2_PROXY_*` env var at runtime |
 | **File** | `"file"` | Uses `--*-file` flag pointing to CSI-mounted file (secrets only) |
+| **File (custom path)** | `"file:/path/to/secret"` | Uses `--*-file` flag pointing to specified path (secrets only) |
 
 ### Example: Using `fromEnv` with `env-secret`
 
@@ -85,6 +86,59 @@ metadata:
 
 The CSI volume is mounted at `/etc/oauth2-proxy/conf.d/` and secrets are read via `--client-secret-file` and `--cookie-secret-file` flags.
 
+### Example: Using Vault Agent Injector
+
+Vault Agent Injector writes files (not environment variables), so we need a different approach. The webhook supports two mechanisms:
+
+1. **`env-file`**: Source a shell script containing `export` statements before starting oauth2-proxy
+2. **`file:/path`**: Specify custom file paths for secrets with native `--*-file` support
+
+**Important**: When using `env-file`, the oauth2-proxy image **must include a shell** (e.g., the Alpine-based images like `quay.io/oauth2-proxy/oauth2-proxy:v7.6.0-alpine`). The default distroless images will not work.
+
+```yaml
+metadata:
+  annotations:
+    # Vault Agent Injector annotations (handled by Vault, not this webhook)
+    vault.hashicorp.com/agent-inject: "true"
+    vault.hashicorp.com/agent-inject-secret-env: "secret/data/oauth2"
+    vault.hashicorp.com/agent-inject-template-env: |
+      {{ with secret "secret/data/oauth2" }}
+      export OAUTH2_PROXY_CLIENT_ID="{{ .Data.data.client_id }}"
+      export OAUTH2_PROXY_OIDC_ISSUER_URL="{{ .Data.data.issuer_url }}"
+      {{ end }}
+    vault.hashicorp.com/agent-inject-secret-client-secret: "secret/data/oauth2"
+    vault.hashicorp.com/agent-inject-template-client-secret: |
+      {{ with secret "secret/data/oauth2" }}{{ .Data.data.client_secret }}{{ end }}
+    vault.hashicorp.com/agent-inject-secret-cookie-secret: "secret/data/oauth2"
+    vault.hashicorp.com/agent-inject-template-cookie-secret: |
+      {{ with secret "secret/data/oauth2" }}{{ .Data.data.cookie_secret }}{{ end }}
+
+    # This webhook's annotations
+    spacemule.net/oauth2-proxy.enabled: "true"
+    spacemule.net/oauth2-proxy.proxy-image: "quay.io/oauth2-proxy/oauth2-proxy:v7.6.0-alpine"
+
+    # Source env file before starting (for non-secret config)
+    spacemule.net/oauth2-proxy.env-file: "/vault/secrets/env"
+    spacemule.net/oauth2-proxy.client-id: "fromEnv"
+    spacemule.net/oauth2-proxy.oidc-issuer-url: "fromEnv"
+
+    # Custom file paths for secrets (using file:/path syntax)
+    spacemule.net/oauth2-proxy.client-secret-ref: "file:/vault/secrets/client-secret"
+    spacemule.net/oauth2-proxy.cookie-secret-ref: "file:/vault/secrets/cookie-secret"
+
+    # Literal values still work as before
+    spacemule.net/oauth2-proxy.provider: "oidc"
+    spacemule.net/oauth2-proxy.protected-port: "http"
+```
+
+When `env-file` is set, the container command becomes:
+```yaml
+command: ["/bin/sh", "-c"]
+args: ["source /vault/secrets/env && exec /bin/oauth2-proxy --provider=oidc ..."]
+```
+
+This sources the environment variables from the Vault-injected file, then starts oauth2-proxy with `exec` to ensure proper signal handling.
+
 ### Fields That Don't Support `fromEnv`
 
 Some fields are pod-specific and are used by the webhook at injection time, not by oauth2-proxy at runtime:
@@ -137,8 +191,11 @@ When set, a CSI volume is mounted at `/etc/oauth2-proxy/conf.d/`. Use `"file"` a
 |------------|----------|---------|-------------|
 | `spacemule.net/oauth2-proxy.env-secret` | No | - | Name of Secret containing values for `"fromEnv"` fields |
 | `spacemule.net/oauth2-proxy.extra-env` | No | - | Additional env vars to inject: `"secretKey:ENV_VAR_NAME,..."` |
+| `spacemule.net/oauth2-proxy.env-file` | No | - | Path to env file to source before starting oauth2-proxy (for Vault Agent Injector) |
 
 When `env-secret` is set, fields with `"fromEnv"` source will generate env var entries that read from this Secret. The Secret keys should match annotation names (e.g., `client-id`, `provider`, `oidc-issuer-url`).
+
+When `env-file` is set, the container uses a shell wrapper to source the file before starting oauth2-proxy. This is useful for **Vault Agent Injector** which writes files containing `export` statements. **Important**: The oauth2-proxy image must include a shell (use Alpine-based images like `v7.6.0-alpine`).
 
 The `extra-env` annotation allows injecting arbitrary environment variables from the same Secret. These env vars are available to oauth2-proxy at runtime and can be referenced in literal annotation values using `${VAR_NAME}` syntax.
 
@@ -171,8 +228,8 @@ This injects the `PROJECT_ID` env var into the oauth2-proxy container. The `allo
 | Annotation | Default | Supports | Description |
 |------------|---------|----------|-------------|
 | `spacemule.net/oauth2-proxy.client-id` | ConfigMap | `fromEnv` | OAuth2 client ID |
-| `spacemule.net/oauth2-proxy.client-secret-ref` | ConfigMap | `file`, `fromEnv` | Secret reference (`"secret-name"` or `"secret-name:key"`) or `"file"`/`"fromEnv"` |
-| `spacemule.net/oauth2-proxy.cookie-secret-ref` | ConfigMap | `file`, `fromEnv` | Secret reference or `"file"`/`"fromEnv"` |
+| `spacemule.net/oauth2-proxy.client-secret-ref` | ConfigMap | `file`, `file:/path`, `fromEnv` | Secret reference (`"secret-name"` or `"secret-name:key"`), `"file"` (CSI path), `"file:/custom/path"`, or `"fromEnv"` |
+| `spacemule.net/oauth2-proxy.cookie-secret-ref` | ConfigMap | `file`, `file:/path`, `fromEnv` | Secret reference, `"file"` (CSI path), `"file:/custom/path"`, or `"fromEnv"` |
 | `spacemule.net/oauth2-proxy.scope` | ConfigMap | `fromEnv` | OAuth scopes to request |
 | `spacemule.net/oauth2-proxy.pkce-enabled` | ConfigMap | - | Enable PKCE flow (`"true"` or `"false"`). Sets `--code-challenge-method=S256` |
 | `spacemule.net/oauth2-proxy.code-challenge-method` | ConfigMap | `fromEnv` | PKCE code challenge method (`"S256"`, `"plain"`, or `"fromEnv"`) |
