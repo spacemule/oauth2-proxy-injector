@@ -48,4 +48,4 @@ pipelines:
             - export BRANCH="dev"
             - *start-build
             - *submit-workflow
-            - *finish-buildn
+            - *finish-build
