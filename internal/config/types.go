@@ -134,6 +134,12 @@ type ProxyConfig struct {
 	// Overridable: UX preference per service
 	SkipProviderButton bool
 
+	// Prompt specifies the OIDC prompt parameter
+	// Value: space-delimited list (e.g., "none", "login", "consent", "select_account")
+	// When set, approval-prompt is ignored by oauth2-proxy
+	// Overridable: Different services may need different prompt behavior
+	Prompt string
+
 	// ===== Container Settings (ConfigMap only) =====
 
 	// ExtraArgs contains any additional oauth2-proxy arguments
@@ -340,6 +346,11 @@ const (
 	// CMKeySkipProviderButton skips the provider button page
 	CMKeySkipProviderButton = "skip-provider-button"
 
+	// CMKeyPrompt is the OIDC prompt parameter
+	// Value: space-delimited list (e.g., "none", "login", "consent", "select_account")
+	// When set, approval-prompt is ignored by oauth2-proxy
+	CMKeyPrompt = "prompt"
+
 	// ===== Container Settings (not overridable) =====
 
 	// CMKeyExtraArgs is newline-separated extra arguments
@@ -422,6 +433,10 @@ type EffectiveConfig struct {
 
 	SkipProviderButton  SourcedBool
 	SkipJWTBearerTokens SourcedBool
+
+	// Prompt specifies the OIDC prompt parameter (merged, supports fromEnv)
+	// Value: space-delimited list (e.g., "none", "login", "consent", "select_account")
+	Prompt SourcedValue
 
 	// ===== Container Settings =====
 

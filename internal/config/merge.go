@@ -89,6 +89,7 @@ func (m *ConfigMerger) Merge(base *ProxyConfig, overrides *annotation.Config) (*
 	cfg.SetXAuthRequest = mergeSourcedBool(base.SetXAuthRequest, overrides.Overrides.SetXAuthRequest)
 	cfg.PassAuthorizationHeader = mergeSourcedBool(base.PassAuthorizationHeader, overrides.Overrides.PassAuthorizationHeader)
 	cfg.SkipProviderButton = mergeSourcedBool(base.SkipProviderButton, overrides.Overrides.SkipProviderButton)
+	cfg.Prompt = mergeSourcedValue(base.Prompt, overrides.Overrides.Prompt)
 	cfg.WhitelistDomains = mergeSourcedStringSlice(base.WhitelistDomains, overrides.Overrides.WhitelistDomains)
 	cfg.EmailDomains = mergeSourcedStringSlice(base.EmailDomains, overrides.Overrides.EmailDomains)
 	cfg.AllowedGroups = mergeSourcedStringSlice(base.AllowedGroups, overrides.Overrides.AllowedGroups)

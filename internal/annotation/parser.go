@@ -175,6 +175,12 @@ const (
 	// Value: claim name (e.g., "groups", "roles")
 	KeyOIDCGroupsClaim = AnnotationPrefix + "oidc-groups-claim"
 
+	// KeyPrompt overrides the OIDC prompt parameter
+	// Value: space-delimited list of prompt values (e.g., "none", "login", "consent", "select_account")
+	// When set, approval-prompt is ignored by oauth2-proxy
+	// Supports: "fromEnv" to read from OAUTH2_PROXY_PROMPT environment variable
+	KeyPrompt = AnnotationPrefix + "prompt"
+
 	// ===== Cookie Overrides =====
 
 	// KeyCookieSecure overrides the cookie secure flag from ConfigMap
@@ -643,6 +649,11 @@ type ConfigOverrides struct {
 	// SkipJWTBearerTokens overrides skip-jwt-bearer-tokens
 	SkipJWTBearerTokens BoolValueSource
 
+	// Prompt overrides the OIDC prompt parameter
+	// Value: space-delimited list (e.g., "none", "login", "consent", "select_account")
+	// When set, approval-prompt is ignored by oauth2-proxy
+	Prompt ValueSource
+
 	// ===== Container Overrides =====
 
 	// ProxyImage overrides the oauth2-proxy container image
@@ -869,6 +880,10 @@ func (p *AnnotationParser) Parse(annotations map[string]string) (*Config, error)
 			return nil, err
 		}
 		cfg.Overrides.SkipProviderButton = b
+	}
+
+	if v, ok := annotations[KeyPrompt]; ok {
+		cfg.Overrides.Prompt = ParseValueSource(v)
 	}
 
 	return cfg, nil

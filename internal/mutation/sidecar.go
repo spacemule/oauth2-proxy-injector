@@ -239,6 +239,10 @@ func buildArgs(cfg *config.EffectiveConfig, portMapping PortMapping) []string {
 	if !cfg.CookieName.IsFromEnv() && cfg.CookieName.Value != "" {
 		ret = append(ret, "--cookie-name="+cfg.CookieName.Value)
 	}
+	// Prompt - skip if fromEnv
+	if !cfg.Prompt.IsFromEnv() && cfg.Prompt.Value != "" {
+		ret = append(ret, "--prompt="+cfg.Prompt.Value)
+	}
 	if cfg.PingPath != "" {
 		ret = append(ret, "--ping-path="+cfg.PingPath)
 	}
@@ -450,6 +454,9 @@ func buildEnvVarsFromSecret(cfg *config.EffectiveConfig) []corev1.EnvVar {
 	}
 	if cfg.SkipJWTBearerTokens.IsFromEnv() {
 		addEnvVar("OAUTH2_PROXY_SKIP_JWT_BEARER_TOKENS", "skip-jwt-bearer-tokens")
+	}
+	if cfg.Prompt.IsFromEnv() {
+		addEnvVar("OAUTH2_PROXY_PROMPT", "prompt")
 	}
 
 	// Extra env vars (arbitrary user-defined mappings)

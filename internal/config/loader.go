@@ -213,6 +213,10 @@ func parseConfigMap(data map[string]string, name, namespace string) (*ProxyConfi
 		}
 	}
 
+	if v, ok := data[CMKeyPrompt]; ok {
+		cfg.Prompt = strings.TrimSpace(v)
+	}
+
 	return cfg, nil
 }
 
