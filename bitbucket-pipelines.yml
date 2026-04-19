@@ -11,6 +11,17 @@ definitions:
           echo $KUBECONFIG_B64 | base64 -d > /kubeconfig &&
           export KUBECONFIG=/kubeconfig
     - step:
+        script: &submit-workflow |-
+          ARGO_JOBNAME=$(argo -n argo submit \
+            --from workflowtemplate/buildah-https-workflow-template \
+            --name "${BITBUCKET_REPO_SLUG}-${BRANCH}-${BITBUCKET_BUILD_NUMBER}" \
+            -p dockerImage="${BITBUCKET_REPO_SLUG}" \
+            -p gitRepo="bitbucket.org/${BITBUCKET_REPO_FULL_NAME}.git" \
+            -p gitRevision="${BITBUCKET_BRANCH}" \
+            -p helmChartPath="deploy" \
+            -p chartVersion="${CHART_VERSION}" \
+            --output name)
+    - step:
         script: &finish-build |-
           argo -n argo logs --follow "${ARGO_JOBNAME}" &&
           argo -n argo watch "${ARGO_JOBNAME}" &&
@@ -23,32 +34,18 @@ pipelines:
           name: Submit argo workflow
           image: atlassian/pipelines-kubectl
           script:
+            - export CHART_VERSION="1.0.${BITBUCKET_BUILD_NUMBER}"
+            - export BRANCH="master"
             - *start-build
-            - |
-              ARGO_JOBNAME=$(argo -n argo submit \
-              --from workflowtemplate/buildah-ssh-workflow-template \
-              -p dockerImage="oauth2-proxy-injector" \
-              -p helmChartPath="oauth2-proxy-injector" \
-              -p gitRevision="${BITBUCKET_BRANCH}" \
-              -p gitRepo="git@bitbucket.org:console_deepinnovations/oauth2-proxy-injector.git" \
-              -p tag="build-${BITBUCKET_BUILD_NUMBER}" \
-              --output name)
+            - *submit-workflow
             - *finish-build
-
     deep_dev:
       - step:
           name: Submit argo workflow
           image: atlassian/pipelines-kubectl
           script:
+            - export CHART_VERSION="0.0.${BITBUCKET_BUILD_NUMBER}"
+            - export BRANCH="dev"
             - *start-build
-            - |
-              ARGO_JOBNAME=$(argo -n argo submit \
-              --from workflowtemplate/buildah-ssh-workflow-template \
-              -p dockerImage="oauth2-proxy-injector" \
-              -p helmChartPath="oauth2-proxy-injector" \
-              -p gitRevision="${BITBUCKET_BRANCH}" \
-              -p gitRepo="git@bitbucket.org:console_deepinnovations/oauth2-proxy-injector.git" \
-              -p tag="dev-${BITBUCKET_BUILD_NUMBER}" \
-              -p valuesKey="devImage.tag" \
-              --output name)
-            - *finish-build
+            - *submit-workflow
+            - *finish-buildn
