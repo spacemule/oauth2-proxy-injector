@@ -84,4 +84,8 @@ data:
   extra-args: |
     {{- . | nindent 4 }}
   {{- end }}
+  {{- with .Values.defaultProxyConfig.proxyResources }}
+  proxy-resources: |
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 {{- end }}

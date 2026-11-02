@@ -93,6 +93,14 @@ defaultProxyConfig:
   # extraArgs: |
   #   --pass-user-headers=true
   #   --reverse-proxy=true
+  # Resource requests/limits for the injected oauth2-proxy sidecar container
+  # proxyResources:
+  #   requests:
+  #     cpu: 50m
+  #     memory: 64Mi
+  #   limits:
+  #     cpu: 200m
+  #     memory: 128Mi
 
 # Init container for iptables-based port blocking (used with block-direct-access annotation)
 initContainer:

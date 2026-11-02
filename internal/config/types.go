@@ -359,6 +359,17 @@ const (
 
 	// CMKeyProxyImage is the oauth2-proxy container image
 	CMKeyProxyImage = "proxy-image"
+
+	// CMKeyProxyResources is YAML for the sidecar's corev1.ResourceRequirements
+	// (i.e. the same shape as a container's `resources:` block)
+	// Example:
+	//   requests:
+	//     cpu: 50m
+	//     memory: 64Mi
+	//   limits:
+	//     cpu: 200m
+	//     memory: 128Mi
+	CMKeyProxyResources = "proxy-resources"
 )
 
 // DefaultProxyImage is the default oauth2-proxy container image

@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"strings"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"sigs.k8s.io/yaml"
 )
 
 // Loader defines the interface for loading oauth2-proxy configuration
@@ -160,6 +162,14 @@ func parseConfigMap(data map[string]string, name, namespace string) (*ProxyConfi
 
 	if v, ok := data[CMKeyProxyImage]; ok {
 		cfg.ProxyImage = strings.TrimSpace(v)
+	}
+
+	if v, ok := data[CMKeyProxyResources]; ok && strings.TrimSpace(v) != "" {
+		var resources corev1.ResourceRequirements
+		if err := yaml.Unmarshal([]byte(v), &resources); err != nil {
+			return nil, fmt.Errorf("invalid %s value: %w", CMKeyProxyResources, err)
+		}
+		cfg.ProxyResources = &resources
 	}
 
 	if v, ok := data[CMKeyOIDCGroupsClaim]; ok {
