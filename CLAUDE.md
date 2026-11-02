@@ -121,7 +121,7 @@ Some pods (annoyingly) terminate TLS at the container level. Support via `upstre
 
 ## Technical Constraints
 
-- Go 1.22+
+- Go 1.26+
 - Use `k8s.io/api`, `k8s.io/apimachinery`, `k8s.io/client-go`
 - No controller-runtime (this isn't an operator)
 - Standard library where possible
